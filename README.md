@@ -1,18 +1,18 @@
-# DriftWatch Market Intelligence Engine
+# DriftWatch — Market Intelligence Engine
 
-A production-ready competitor intelligence platform that actively crawls competitor websites, detects changes in pricing/messaging, and provides actionable market insights.
+A competitive intelligence platform that actively crawls competitor websites, detects changes in pricing and messaging, and surfaces actionable market insights.
 
-Built for **SNUC Hacks 2026 - Track 2: Market Intelligence**
+---
 
 ## 🎯 What Problem This Solves
 
-Companies struggle to understand their competitive landscape. Market intelligence is scattered across:
+Companies struggle to keep track of their competitive landscape. Market intelligence is scattered across:
 - Competitor websites and pricing pages
 - Review platforms (G2, Trustpilot)
 - Social media and forums
 - Ad libraries and campaigns
 
-**Sirius** automates this intelligence gathering, tracks changes over time, and surfaces actionable insights.
+**DriftWatch** automates this intelligence gathering, tracks changes over time, and surfaces the ones that actually matter.
 
 ---
 
@@ -128,10 +128,10 @@ cd ..
 
 ### Environment Variables
 
-Create `.env` file:
+Create a `.env` file:
 
 ```env
-DATABASE_URL=postgresql+asyncpg://user:password@localhost/sirius_db
+DATABASE_URL=postgresql+asyncpg://user:password@localhost/driftwatch_db
 WEBHOOK_SECRET=your-webhook-secret-key
 PRICE_CHANGE_THRESHOLD_PCT=5.0
 ANOMALY_ZSCORE_THRESHOLD=2.5
@@ -145,7 +145,7 @@ ANOMALY_ZSCORE_THRESHOLD=2.5
 
 ```powershell
 .\venv\Scripts\Activate.ps1
-cd sirius-main
+cd driftwatch
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -154,7 +154,7 @@ API docs available at: `http://localhost:8000/docs`
 ### 2. Start Frontend (new terminal)
 
 ```powershell
-cd sirius-main\frontend
+cd driftwatch\frontend
 npm run dev
 ```
 
@@ -209,44 +209,29 @@ curl -X POST http://localhost:8000/api/crawl/trigger
 
 ---
 
-## 📊 Track 2 Compliance Analysis
-
-| Requirement | Implementation | Gap |
-|-------------|----------------|-----|
-| **Crawl competitor websites** | ✅ Active crawler with aiohttp + BeautifulSoup | None |
-| **Track pricing changes** | ✅ Price detection with history & anomaly | None |
-| **Monitor review platforms** | 🔴 Not implemented | Needs G2/Trustpilot scrapers |
-| **Ad library tracking** | 🔴 Not implemented | Needs Facebook/Google Ads API |
-| **Influencer/community mentions** | 🔴 Not implemented | Needs Reddit/forum scrapers |
-| **Trend/whitespace analysis** | 🟡 Basic keyword tracking | Needs NLP clustering |
-| **Decision-ready insights** | 🟡 Event summaries | Needs AI-generated reports |
-
----
-
-## 🔧 Key Files Added/Modified
+## 📁 Project Structure
 
 ```
-sirius-main/
+driftwatch/
 ├── app/
-│   ├── main.py                    # ← Added crawler endpoints + scheduler
+│   ├── main.py
 │   ├── services/
-│   │   ├── crawler.py             # ← NEW: Web crawler
-│   │   ├── scheduler.py           # ← NEW: APScheduler integration
-│   │   ├── change_detector.py     # Existing: Detection logic
-│   │   └── snapshot_service.py    # Existing: Data processing
+│   │   ├── crawler.py
+│   │   ├── scheduler.py
+│   │   ├── change_detector.py
+│   │   └── snapshot_service.py
 │   ├── db/
-│   │   └── database.py            # ← Added async_session export
+│   │   └── database.py
 │   └── models/
-│       └── models.py              # Existing: Database schemas
+│       └── models.py
 ├── frontend/src/
-│   ├── App.jsx                    # ← Fixed: Removed broken code
-│   ├── api.js                     # ← Added: Crawler API methods
+│   ├── App.jsx
+│   ├── api.js
 │   └── pages/
-│       ├── Overview.jsx           # ← Enhanced: Competitor management
-│       └── Insights.jsx           # ← NEW: Event dashboard
-├── requirements.txt               # ← Added: beautifulsoup4, aiohttp
-├── setup_and_run.ps1             # ← NEW: Automated setup
-└── README.md                      # ← NEW: This file
+│       ├── Overview.jsx
+│       └── Insights.jsx
+├── requirements.txt
+└── setup_and_run.ps1
 ```
 
 ---
@@ -255,7 +240,7 @@ sirius-main/
 
 1. **Crawler limitations**: Some sites with heavy JavaScript may not crawl properly (needs Playwright/Selenium)
 2. **No authentication**: Currently no user auth (add JWT for production)
-3. **In-memory competitor registry**: Should move to database table
+3. **In-memory competitor registry**: Should move to a database table
 4. **No tests**: Unit/integration tests not written yet
 
 ---
@@ -273,12 +258,12 @@ sirius-main/
 
 ---
 
-## 👥 Team
+## 📝 Origin
 
-**Sirius** - SNUC Hacks 2026
+Originally built as a team hackathon project at SNUC Hacks 2026. Actively developed and extended solo since — including the crawler scheduler, anomaly detection, and dashboard rework.
 
 ---
 
 ## 📄 License
 
-MIT License - Built for educational purposes
+MIT License
