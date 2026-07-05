@@ -1,4 +1,4 @@
-# Sirius Market Intelligence Engine
+# DriftWatch Market Intelligence Engine
 
 A production-ready competitor intelligence platform that actively crawls competitor websites, detects changes in pricing/messaging, and provides actionable market insights.
 
