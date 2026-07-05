@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>EdTech Intelligence — P4 Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0a0d14;
+    --surface: #111520;
+    --card: #161b2e;
+    --border: #1e2640;
+    --accent: #4f8ef7;
+    --accent2: #a78bfa;
+    --green: #34d399;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --glow: rgba(79,142,247,0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 40px;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(10,13,20,0.92);
+    backdrop-filter: blur(12px);
+  }
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.4rem;
+    letter-spacing: -0.02em;
+  }
+  .logo span { color: var(--accent); }
+  .badge {
+    font-size: 0.7rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: rgba(79,142,247,0.15);
+    border: 1px solid rgba(79,142,247,0.3);
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 20px 40px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    font-weight: 500;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── MAIN LAYOUT ── */
+  main { padding: 32px 40px; max-width: 1400px; margin: 0 auto; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+
+  /* ── OVERVIEW GRID ── */
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+  .stat-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-label { font-size: 0.82rem; color: var(--muted); }
+  .stat-delta {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+  .neutral { color: var(--yellow); }
+
+  /* ── CHART ROW ── */
+  .chart-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .chart-box { position: relative; height: 260px; }
+
+  /* ── INSIGHTS ── */
+  .insights-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .insight-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: start;
+    gap: 16px;
+    transition: border-color 0.2s;
+  }
+  .insight-card:hover { border-color: var(--accent); }
+  .severity-pill {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .sev-critical { background: rgba(248,113,113,0.15); color: var(--red); }
+  .sev-high { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .sev-medium { background: rgba(79,142,247,0.15); color: var(--accent); }
+  .sev-low { background: rgba(52,211,153,0.15); color: var(--green); }
+
+  .insight-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 6px;
+  }
+  .insight-body { color: #94a3b8; font-size: 0.88rem; line-height: 1.6; }
+  .insight-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .meta-tag {
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .intake-badge {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--green);
+    white-space: nowrap;
+    padding-top: 2px;
+  }
+
+  /* ── RECOMMENDATIONS ── */
+  .rec-list { display: flex; flex-direction: column; gap: 16px; }
+  .rec-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 26px;
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 18px;
+    align-items: start;
+    transition: border-color 0.2s;
+  }
+  .rec-card:hover { border-color: var(--accent2); }
+  .rec-num {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    background: rgba(167,139,250,0.12);
+    border: 1px solid rgba(167,139,250,0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: var(--accent2);
+  }
+  .rec-action {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .rec-rationale { color: #94a3b8; font-size: 0.87rem; line-height: 1.6; margin-bottom: 12px; }
+  .rec-footer { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .rec-chip {
+    font-size: 0.72rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .chip-blue { background: rgba(79,142,247,0.15); color: var(--accent); }
+  .chip-purple { background: rgba(167,139,250,0.15); color: var(--accent2); }
+  .chip-green { background: rgba(52,211,153,0.12); color: var(--green); }
+  .chip-yellow { background: rgba(251,191,36,0.12); color: var(--yellow); }
+
+  /* ── CHANGES TAB ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .compare-table th {
+    padding: 10px 14px;
+    text-align: left;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+  .compare-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .delta-pos { color: var(--red); font-weight: 600; }
+  .delta-neg { color: var(--green); font-weight: 600; }
+  .delta-0 { color: var(--muted); }
+
+  /* ── ASK AI TAB ── */
+  .ask-area {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  .chat-messages {
+    min-height: 300px;
+    max-height: 450px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .msg { display: flex; gap: 12px; }
+  .msg-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+  .msg-user .msg-icon { background: rgba(79,142,247,0.2); }
+  .msg-ai .msg-icon { background: rgba(167,139,250,0.2); }
+  .msg-text {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    flex: 1;
+  }
+  .msg-user .msg-text { border-color: rgba(79,142,247,0.2); }
+
+  .chat-input-row { display: flex; gap: 10px; }
+  .chat-input {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .chat-input:focus { border-color: var(--accent); }
+  .send-btn {
+    padding: 12px 22px;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .send-btn:hover { opacity: 0.85; }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── INPUT FORM ── */
+  .form-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+  .form-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin-bottom: 18px;
+  }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group label { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
+  .form-control {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-control:focus { border-color: var(--accent); }
+  .run-btn {
+    margin-top: 20px;
+    padding: 13px 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    letter-spacing: 0.02em;
+  }
+  .run-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* ── EXEC SUMMARY ── */
+  .exec-summary {
+    background: linear-gradient(135deg, rgba(79,142,247,0.06), rgba(167,139,250,0.06));
+    border: 1px solid rgba(79,142,247,0.25);
+    border-radius: 12px;
+    padding: 22px 26px;
+    margin-bottom: 24px;
+    font-size: 0.95rem;
+    line-height: 1.7;
+    color: #cbd5e1;
+  }
+  .exec-summary strong { color: var(--text); font-family: 'Syne', sans-serif; }
+
+  /* ── LOADING ── */
+  .loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
+    gap: 16px;
+    color: var(--muted);
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">EdTech<span>IQ</span></div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <span class="badge">P4 · AI ENGINE</span>
+    <span id="api-status" class="badge" style="background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.3);color:var(--green)">● LIVE</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('overview')">Overview</button>
+  <button class="tab-btn" onclick="switchTab('insights')">Insights</button>
+  <button class="tab-btn" onclick="switchTab('changes')">Changes</button>
+  <button class="tab-btn" onclick="switchTab('recommendations')">Recommendations</button>
+  <button class="tab-btn" onclick="switchTab('ask')">Ask AI</button>
+</div>
+
+<main>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- OVERVIEW TAB                               -->
+<!-- ══════════════════════════════════════════ -->
+<div id="tab-overview" class="tab-panel active">
+
+  <!-- Input Form -->
+  <div class="form-panel">
+    <div class="form-title">Configure Analysis</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Company Name (Client)</label>
+        <input class="form-control" id="inp-name" placeholder="e.g. EduPro Academy" value="EduPro Academy"/>
+      </div>
+      <div class="form-group">
+        <label>Domain</label>
+        <select class="form-control" id="inp-domain">
+          <option value="technical">Technical Courses</option>
+          <option value="competitive_exam">Competitive Exams</option>
+          <option value="college_school">College / School</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Base Price (₹)</label>
+        <input class="form-control" id="inp-price" type="number" value="15000"/>
+      </div>
+      <div class="form-group">
+        <label>Discount (%)</label>
+        <input class="form-control" id="inp-discount" type="number" value="10"/>
+      </div>
+      <div class="form-group">
+        <label>Competitor Names (comma-separated)</label>
+        <input class="form-control" id="inp-competitors" placeholder="Scaler, GFG, Unacademy" value="Scaler Academy, GeeksForGeeks Courses"/>
+      </div>
+      <div class="form-group">
+        <label>Student Intake Change (%)</label>
+        <input class="form-control" id="inp-intake" type="number" value="-3.5"/>
+      </div>
+    </div>
+    <button class="run-btn" id="run-btn" onclick="runAnalysis()">⚡ Run AI Analysis</button>
+  </div>
+
+  <!-- Stats Row -->
+  <div class="overview-grid" id="stats-grid">
+    <div class="empty-state" style="grid-column:1/-1">
+      <div class="icon">🔍</div>
+      Configure and run analysis above to see results.
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-row" id="chart-row" style="display:none">
+    <div class="card">
+      <div class="card-title">Score Comparison</div>
+      <div class="chart-box"><canvas id="radar-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Student Intake Δ by Company</div>
+      <div class="chart-box"><canvas id="intake-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- INSIGHTS TAB                               -->
+<!-- ══════════════════════════════════════════ -->
+<div id="tab-insights" class="tab-panel">
+  <div id="exec-summary-box" style="display:none" class="exec-summary"></div>
+  <div class="insights-grid" id="insights-list">
+    <div class="empty-state"><div class="icon">💡</div>Run analysis to see insights.</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- CHANGES TAB                                -->
+<!-- ══════════════════════════════════════════ -->
+<div id="tab-changes" class="tab-panel">
+  <div id="changes-content">
+    <div class="empty-state"><div class="icon">📊</div>Run analysis to see competitor deltas.</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- RECOMMENDATIONS TAB                        -->
+<!-- ══════════════════════════════════════════ -->
+<div id="tab-recommendations" class="tab-panel">
+  <div class="rec-list" id="rec-list">
+    <div class="empty-state"><div class="icon">🚀</div>Run analysis to see recommendations.</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ASK AI TAB                                 -->
+<!-- ══════════════════════════════════════════ -->
+<div id="tab-ask" class="tab-panel">
+  <div class="ask-area">
+    <div class="chat-messages" id="chat-messages">
+      <div class="msg msg-ai">
+        <div class="msg-icon">🧠</div>
+        <div class="msg-text">Hi! I'm your EdTech intelligence assistant. Run an analysis first, then ask me anything about the competitive landscape, specific metrics, or what actions your company should prioritise.</div>
+      </div>
+    </div>
+    <div class="chat-input-row">
+      <input class="chat-input" id="chat-input" placeholder="Ask about pricing strategy, YouTube impact, course gaps…" onkeydown="if(event.key==='Enter')sendChat()"/>
+      <button class="send-btn" id="send-btn" onclick="sendChat()">Send</button>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+// ──────────────────────────────────────────────
+// State
+// ──────────────────────────────────────────────
+let reportData = null;
+let compareData = null;
+let radarChart = null;
+let intakeChart = null;
+const P4_BASE = "http://localhost:8001";   // P4 API
+
+// ──────────────────────────────────────────────
+// Tab switching
+// ──────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ──────────────────────────────────────────────
+// Build demo payload (uses form values + hardcoded competitor data for demo)
+// ──────────────────────────────────────────────
+function buildPayload() {
+  const name = document.getElementById('inp-name').value || 'My Company';
+  const domain = document.getElementById('inp-domain').value;
+  const price = parseFloat(document.getElementById('inp-price').value) || 15000;
+  const discount = parseFloat(document.getElementById('inp-discount').value) || 10;
+  const intake = parseFloat(document.getElementById('inp-intake').value) || 0;
+  const compNames = document.getElementById('inp-competitors').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+
+  const client = {
+    company_name: name, domain, student_intake_change_pct: intake,
+    pricing: { base_price: price, discount_pct: discount, has_emi: false, free_paid_ratio: 0.15, price_change_pct: 12 },
+    courses: { avg_duration_weeks: 20, num_modules: 8, beginner_ratio: 0.4, has_certification: true, live_ratio: 0.3, has_doubt_solving: false, has_assignments: true, popular_courses: ['Intro Course'], duration_change_pct: 5 },
+    engagement: { ads_frequency_weekly: 3, social_posts_weekly: 4, youtube_videos_monthly: 6, youtube_subscribers: 45000, youtube_avg_views: 8000, youtube_comments_avg: 45, review_rating: 3.8, num_reviews: 320, students_enrolled: 4200 },
+    retention: { referral_program: false, rewards_offered: false, free_trial: false, website_changes_count: 1, discontinuity_signals: 2 }
+  };
+
+  // Demo competitor data (in production P2 provides real scraped data)
+  const competitorTemplates = [
+    { student_intake_change_pct: 18.2, pricing: { base_price: 19999, discount_pct: 20, has_emi: true, free_paid_ratio: 0.35, price_change_pct: -5 }, courses: { avg_duration_weeks: 9, num_modules: 15, beginner_ratio: 0.55, has_certification: true, live_ratio: 0.7, has_doubt_solving: true, has_assignments: true, popular_courses: ['DSA', 'System Design'], duration_change_pct: -10 }, engagement: { ads_frequency_weekly: 8, social_posts_weekly: 12, youtube_videos_monthly: 18, youtube_subscribers: 820000, youtube_avg_views: 95000, youtube_comments_avg: 620, review_rating: 4.6, num_reviews: 12400, students_enrolled: 85000 }, retention: { referral_program: true, rewards_offered: true, free_trial: true, website_changes_count: 7, discontinuity_signals: 0 } },
+    { student_intake_change_pct: 11.4, pricing: { base_price: 9999, discount_pct: 30, has_emi: true, free_paid_ratio: 0.6, price_change_pct: -8 }, courses: { avg_duration_weeks: 12, num_modules: 12, beginner_ratio: 0.7, has_certification: true, live_ratio: 0.5, has_doubt_solving: true, has_assignments: true, popular_courses: ['GATE', 'Placement'], duration_change_pct: -5 }, engagement: { ads_frequency_weekly: 6, social_posts_weekly: 9, youtube_videos_monthly: 22, youtube_subscribers: 1200000, youtube_avg_views: 75000, youtube_comments_avg: 380, review_rating: 4.2, num_reviews: 8900, students_enrolled: 62000 }, retention: { referral_program: true, rewards_offered: false, free_trial: true, website_changes_count: 5, discontinuity_signals: 1 } },
+  ];
+
+  const competitors = compNames.map((cn, i) => ({
+    company_name: cn, domain,
+    ...(competitorTemplates[i % competitorTemplates.length])
+  }));
+
+  return { client, competitors };
+}
+
+// ──────────────────────────────────────────────
+// Run Analysis
+// ──────────────────────────────────────────────
+async function runAnalysis() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Analysing…';
+
+  document.getElementById('stats-grid').innerHTML = '<div class="loader" style="grid-column:1/-1"><div class="spinner"></div><span>Running AI analysis…</span></div>';
+
+  try {
+    const payload = buildPayload();
+
+    // Call P4 API — with fallback to mock if not running
+    let report, compare;
+    try {
+      const [r1, r2] = await Promise.all([
+        fetch(`${P4_BASE}/insights`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }),
+        fetch(`${P4_BASE}/compare`,  { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }),
+      ]);
+      report  = await r1.json();
+      compare = await r2.json();
+    } catch(e) {
+      // Fallback mock for demo when API not running
+      report  = mockReport(payload);
+      compare = mockCompare(payload);
+    }
+
+    reportData  = report;
+    compareData = compare;
+
+    renderOverview();
+    renderInsights();
+    renderChanges();
+    renderRecommendations();
+
+  } catch(e) {
+    document.getElementById('stats-grid').innerHTML = `<div class="empty-state" style="grid-column:1/-1;color:var(--red)">Error: ${e.message}</div>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '⚡ Run AI Analysis';
+}
+
+// ──────────────────────────────────────────────
+// Render Overview
+// ──────────────────────────────────────────────
+function renderOverview() {
+  const r = reportData;
+  const intakeDelta = r.student_intake_delta;
+  const scoreDiff = r.overall_score - r.industry_avg_score;
+
+  document.getElementById('stats-grid').innerHTML = `
+    ${stat('Overall Score', r.overall_score.toFixed(1), '/100', scoreDiff >= 0 ? 'up' : 'down', `vs industry avg ${r.industry_avg_score.toFixed(1)}`)}
+    ${stat('Student Intake Δ', (intakeDelta >= 0 ? '+' : '') + intakeDelta.toFixed(1) + '%', '', intakeDelta >= 0 ? 'up' : 'down', 'change in enrollment')}
+    ${stat('Insights Found', r.insights.length, '', 'neutral', r.insights.filter(i => i.severity === 'critical').length + ' critical')}
+    ${stat('Recommendations', r.recommendations.length, '', 'up', 'ranked by priority')}
+  `;
+
+  document.getElementById('chart-row').style.display = 'grid';
+  drawRadar();
+  drawIntakeChart();
+}
+
+function stat(label, value, unit, cls, sub) {
+  return `<div class="stat-card">
+    <div class="stat-label">${label}</div>
+    <div class="stat-value ${cls}">${value}<small style="font-size:0.9rem;font-weight:400">${unit}</small></div>
+    <div class="stat-delta ${cls}">${sub}</div>
+  </div>`;
+}
+
+function drawRadar() {
+  if (radarChart) radarChart.destroy();
+  const ctx = document.getElementById('radar-chart').getContext('2d');
+  const r = reportData;
+  const c = compareData;
+  const compScores = c.competitors.map(cp => cp.profile);
+
+  const labels = ['Pricing', 'Courses', 'Engagement', 'Retention'];
+
+  const clientVals = [
+    c.client.pricing.score, c.client.courses.score,
+    c.client.engagement.score, c.client.retention.score
+  ];
+
+  const datasets = [{
+    label: c.client.name,
+    data: clientVals,
+    backgroundColor: 'rgba(79,142,247,0.15)',
+    borderColor: 'rgba(79,142,247,0.8)',
+    borderWidth: 2,
+    pointBackgroundColor: '#4f8ef7',
+  }];
+
+  const colors = ['rgba(167,139,250,0.8)', 'rgba(52,211,153,0.8)', 'rgba(251,191,36,0.8)'];
+  compScores.forEach((cp, i) => {
+    datasets.push({
+      label: cp.name,
+      data: [cp.pricing.score, cp.courses.score, cp.engagement.score, cp.retention.score],
+      backgroundColor: colors[i % colors.length].replace('0.8', '0.08'),
+      borderColor: colors[i % colors.length],
+      borderWidth: 1.5,
+      pointBackgroundColor: colors[i % colors.length],
+    });
+  });
+
+  radarChart = new Chart(ctx, {
+    type: 'radar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { r: { min: 0, max: 100, ticks: { color: '#64748b', font: { size: 9 }, stepSize: 25 }, grid: { color: '#1e2640' }, pointLabels: { color: '#94a3b8', font: { size: 11, family: 'Syne' } }, angleLines: { color: '#1e2640' } } },
+      plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 12, font: { family: 'DM Sans' } } } }
+    }
+  });
+}
+
+function drawIntakeChart() {
+  if (intakeChart) intakeChart.destroy();
+  const ctx = document.getElementById('intake-chart').getContext('2d');
+  const c = compareData;
+
+  const labels = [c.client.name, ...c.competitors.map(x => x.profile.name)];
+  const values = [c.client.student_intake_change_pct, ...c.competitors.map(x => x.profile.student_intake_change_pct)];
+  const colors = values.map(v => v >= 0 ? 'rgba(52,211,153,0.7)' : 'rgba(248,113,113,0.7)');
+
+  intakeChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Intake Δ %', data: values, backgroundColor: colors, borderRadius: 6, borderSkipped: false }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#94a3b8', font: { family: 'DM Sans', size: 11 } }, grid: { color: '#1e2640' } },
+        y: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: '#1e2640' } }
+      }
+    }
+  });
+}
+
+// ──────────────────────────────────────────────
+// Render Insights
+// ──────────────────────────────────────────────
+function renderInsights() {
+  const r = reportData;
+
+  // Exec summary
+  if (r.executive_summary) {
+    const box = document.getElementById('exec-summary-box');
+    box.style.display = 'block';
+    box.innerHTML = `<strong>Executive Summary</strong><br><br>${r.executive_summary}`;
+  }
+
+  const container = document.getElementById('insights-list');
+  if (!r.insights || !r.insights.length) {
+    container.innerHTML = '<div class="empty-state">No insights found.</div>';
+    return;
+  }
+
+  container.innerHTML = r.insights.map(ins => `
+    <div class="insight-card">
+      <span class="severity-pill sev-${ins.severity}">${ins.severity}</span>
+      <div>
+        <div class="insight-title">${ins.title}</div>
+        <div class="insight-body">${ins.explanation}</div>
+        <div class="insight-meta">
+          <span class="meta-tag">📂 ${ins.category}</span>
+          ${(ins.competitors_involved || []).map(c => `<span class="meta-tag">vs ${c}</span>`).join('')}
+        </div>
+      </div>
+      <div class="intake-badge">${ins.intake_impact_estimate || ''}</div>
+    </div>
+  `).join('');
+}
+
+// ──────────────────────────────────────────────
+// Render Changes
+// ──────────────────────────────────────────────
+function renderChanges() {
+  const c = compareData;
+  const metrics = [
+    { key: 'overall_score', label: 'Overall Score', invert: false },
+    { key: 'pricing_score', label: 'Pricing Score', invert: false },
+    { key: 'course_score', label: 'Course Score', invert: false },
+    { key: 'engagement_score', label: 'Engagement Score', invert: false },
+    { key: 'retention_score', label: 'Retention Score', invert: false },
+    { key: 'student_intake_pct', label: 'Student Intake Δ%', invert: false },
+  ];
+
+  const rows = c.competitors.map(comp => {
+    const cells = metrics.map(m => {
+      const d = comp.deltas[m.key];
+      const cls = d > 1 ? 'delta-pos' : d < -1 ? 'delta-neg' : 'delta-0';
+      const sign = d > 0 ? '+' : '';
+      return `<td class="${cls}">${sign}${d.toFixed(1)}</td>`;
+    });
+    return `<tr><td><strong>${comp.profile.name}</strong></td>${cells.join('')}</tr>`;
+  }).join('');
+
+  document.getElementById('changes-content').innerHTML = `
+    <div class="card">
+      <div class="card-title">Competitor Delta vs Client (positive = competitor leads)</div>
+      <div style="overflow-x:auto">
+        <table class="compare-table">
+          <thead><tr>
+            <th>Competitor</th>
+            ${metrics.map(m => `<th>${m.label}</th>`).join('')}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+// ──────────────────────────────────────────────
+// Render Recommendations
+// ──────────────────────────────────────────────
+function renderRecommendations() {
+  const r = reportData;
+  const container = document.getElementById('rec-list');
+
+  if (!r.recommendations || !r.recommendations.length) {
+    container.innerHTML = '<div class="empty-state">No recommendations.</div>';
+    return;
+  }
+
+  const effortColor = { low: 'chip-green', medium: 'chip-yellow', high: 'chip-purple' };
+
+  container.innerHTML = r.recommendations.map(rec => `
+    <div class="rec-card">
+      <div class="rec-num">${rec.priority}</div>
+      <div>
+        <div class="rec-action">${rec.action}</div>
+        <div class="rec-rationale">${rec.rationale}</div>
+        <div class="rec-footer">
+          ${(rec.combined_constraints || []).map(c => `<span class="rec-chip chip-blue">${c}</span>`).join('')}
+          <span class="rec-chip chip-green">${rec.expected_intake_change || ''}</span>
+          <span class="rec-chip ${effortColor[rec.effort] || 'chip-blue'}">Effort: ${rec.effort}</span>
+          <span class="rec-chip chip-purple">⏱ ${rec.timeline}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ──────────────────────────────────────────────
+// Ask AI Chat
+// ──────────────────────────────────────────────
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (!question) return;
+
+  appendMsg('user', question);
+  input.value = '';
+  document.getElementById('send-btn').disabled = true;
+
+  // Build context string from report
+  const context = reportData
+    ? `Company: ${reportData.company_name}, Domain: ${reportData.domain}, Overall Score: ${reportData.overall_score?.toFixed(1)}/100, Student Intake Δ: ${reportData.student_intake_delta?.toFixed(1)}%. Insights count: ${reportData.insights?.length}. Top recommendation: ${reportData.recommendations?.[0]?.action || 'N/A'}.`
+    : 'No analysis has been run yet.';
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 600,
+        system: `You are an EdTech competitive intelligence advisor. The user's analysis context: ${context}\n\nAnswer concisely and specifically. Reference actual numbers when possible.`,
+        messages: [{ role: 'user', content: question }]
+      })
+    });
+    const data = await resp.json();
+    const answer = data.content?.map(b => b.text || '').join('') || 'Unable to get response.';
+    appendMsg('ai', answer);
+  } catch(e) {
+    appendMsg('ai', 'Could not reach AI. Please check your API connection.');
+  }
+  document.getElementById('send-btn').disabled = false;
+}
+
+function appendMsg(role, text) {
+  const box = document.getElementById('chat-messages');
+  const icon = role === 'user' ? '👤' : '🧠';
+  box.innerHTML += `
+    <div class="msg msg-${role}">
+      <div class="msg-icon">${icon}</div>
+      <div class="msg-text">${text.replace(/\n/g,'<br>')}</div>
+    </div>`;
+  box.scrollTop = box.scrollHeight;
+}
+
+// ──────────────────────────────────────────────
+// Mock fallback data (when P4 API not running)
+// ──────────────────────────────────────────────
+function mockReport(payload) {
+  const compNames = payload.competitors.map(c => c.company_name);
+  return {
+    company_name: payload.client.company_name,
+    domain: payload.client.domain,
+    overall_score: 52.4,
+    industry_avg_score: 74.1,
+    student_intake_delta: payload.client.student_intake_change_pct,
+    executive_summary: `${payload.client.company_name} is underperforming vs competitors by 21.7 points overall, with critical gaps in pricing flexibility, YouTube engagement, and retention programs. Competitors are gaining 11–18% in student intake while the client has declined 3.5%, driven by a 12% price hike, no EMI option, and absence of a referral program.`,
+    insights: [
+      { category: 'combined', severity: 'critical', title: 'Price Hike + No EMI Driving Student Loss', explanation: `Client raised prices by 12% while ${compNames[0] || 'Competitor A'} cut prices by 5% and added EMI — a combined 17-point price experience gap. Students at this price point are highly sensitive to payment flexibility.`, competitors_involved: compNames, intake_impact_estimate: '-8 to -12% intake' },
+      { category: 'engagement', severity: 'critical', title: 'YouTube Reach 10x Below Competitors', explanation: `${compNames[0] || 'Competitor A'} generates 95,000 avg views per video vs client's 8,000 — a 12x gap. YouTube is now the #1 discovery channel for EdTech students, directly correlated with enrollment growth.`, competitors_involved: [compNames[0]], intake_impact_estimate: '+10-15% potential' },
+      { category: 'retention', severity: 'high', title: 'Zero Retention Stack: No Referrals, Rewards or Free Trial', explanation: `All top competitors offer at least 2 of 3 retention levers. ${compNames[0] || 'Competitor A'} uses all three, gaining 18% intake. Client's 0/3 score here represents the single fastest fix available.`, competitors_involved: compNames, intake_impact_estimate: '+6-10% intake' },
+      { category: 'course', severity: 'high', title: 'Course Duration 67% Longer Than Optimal', explanation: `Client's 20-week courses are significantly longer than the industry optimal of 9–12 weeks. Students increasingly prefer shorter, modular content — ${compNames[1] || 'Competitor B'} reduced duration 10% and saw 11% intake growth.`, competitors_involved: compNames, intake_impact_estimate: '+5-8% intake' },
+      { category: 'course', severity: 'medium', title: 'No Doubt-Solving System Hurts Completion Rates', explanation: 'All competitors offer dedicated doubt-solving, which reduces churn by keeping students unstuck. This also drives positive reviews, improving SEO and organic discovery.', competitors_involved: compNames, intake_impact_estimate: '+3-5% intake' },
+    ],
+    recommendations: [
+      { priority: 1, action: 'Launch EMI + 20% launch discount bundle immediately', rationale: `${compNames[0] || 'Competitor A'} gained 18% intake after combining price cut with EMI. Reversing the 12% hike and adding 3/6-month EMI can recover lost students within one enrollment cycle.`, combined_constraints: ['pricing', 'retention'], expected_intake_change: '+12-18%', effort: 'low', timeline: '1-2 weeks' },
+      { priority: 2, action: 'Publish 4+ YouTube videos/week targeting high-search topics', rationale: `Competitors post 18-22 videos/month vs client's 6. YouTube acts as free top-of-funnel — each viral video can generate hundreds of leads at zero ad cost. Target topics: DSA, placement prep, coding challenges.`, combined_constraints: ['engagement', 'course'], expected_intake_change: '+8-15%', effort: 'medium', timeline: '4-6 weeks' },
+      { priority: 3, action: 'Launch referral program with ₹2,000 credit reward', rationale: `${compNames[0] || 'Competitor A'}'s referral program is a key driver of their 18% intake surge. In EdTech, peer recommendations carry 3x more weight than ads — and referrals cost less per acquisition than any paid channel.`, combined_constraints: ['retention', 'engagement'], expected_intake_change: '+6-10%', effort: 'low', timeline: '2-3 weeks' },
+      { priority: 4, action: 'Restructure 20-week courses into 3 modular 6-week sprints', rationale: `Shorter course duration reduces commitment barrier for new students. Modular structure also allows partial purchases, increasing total addressable market. ${compNames[1] || 'Competitor B'} saw 11% intake growth after reducing duration by 5 weeks.`, combined_constraints: ['course', 'pricing'], expected_intake_change: '+7-12%', effort: 'high', timeline: '6-8 weeks' },
+      { priority: 5, action: 'Add free trial (first module free) + social proof on homepage', rationale: 'Free trials reduce risk perception. Combining this with displaying student reviews and enrollment numbers on the landing page builds social proof. Both levers are missing vs competitors.', combined_constraints: ['retention', 'engagement'], expected_intake_change: '+4-7%', effort: 'medium', timeline: '2-4 weeks' },
+    ]
+  };
+}
+
+function mockCompare(payload) {
+  const client = {
+    name: payload.client.company_name,
+    pricing: { score: 48.5 }, courses: { score: 55.0 },
+    engagement: { score: 42.0 }, retention: { score: 35.0 },
+    overall_score: 52.4,
+    student_intake_change_pct: payload.client.student_intake_change_pct
+  };
+  const comps = payload.competitors.map((c, i) => ({
+    profile: {
+      name: c.company_name,
+      pricing: { score: 72 + i * 3 }, courses: { score: 78 + i * 2 },
+      engagement: { score: 80 + i }, retention: { score: 70 + i * 4 },
+      overall_score: 75 + i * 2, student_intake_change_pct: 18.2 - i * 6.8
+    },
+    deltas: {
+      overall_score: (22.7 + i * 2),
+      pricing_score: (23.5 + i * 3),
+      course_score: (23.0 + i * 2),
+      engagement_score: (38.0 - i * 5),
+      retention_score: (35.0 - i * 5),
+      student_intake_pct: (21.7 - i * 6.8)
+    }
+  }));
+  return { client, competitors: comps };
+}
+</script>
+</body>
+</html>

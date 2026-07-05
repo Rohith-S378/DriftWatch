@@ -1,0 +1,282 @@
+import Navbar from "../components/Navbar";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  listCompetitors,
+  addCompetitor,
+  removeCompetitor,
+  triggerCrawl,
+  crawlSingle
+} from "../api.js";
+
+function Overview({ sources }) {
+  const [company, setCompany] = useState("");
+  const [url, setUrl] = useState("");
+  const [competitors, setCompetitors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [crawlResult, setCrawlResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const navigate = useNavigate();
+  const domain = localStorage.getItem("domain");
+
+  
+
+  async function loadCompetitors() {
+    const data = await listCompetitors();
+    setCompetitors(data);
+  }
+  // Load competitors on mount
+  useEffect(() => {
+    loadCompetitors();
+  }, []);
+  async function handleSubmit() {
+    if (!company || !url) {
+      setError("Please fill all fields");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    // Add as competitor
+    const result = await addCompetitor(company, url);
+    if (result.error) {
+      setError(result.error);
+      setLoading(false);
+      return;
+    }
+    if (!result) {
+      setError("Failed to add competitor (unexpected error)");
+      setLoading(false);
+      return;
+    }
+
+    // Crawl immediately
+    const crawl = await crawlSingle(company, url);
+    setCrawlResult(crawl);
+
+    // Refresh competitors list
+    await loadCompetitors();
+
+    // Store and navigate
+    localStorage.setItem("company", company);
+    localStorage.setItem("url", url);
+    setLoading(false);
+  }
+
+  const handleQuickCrawl = async (name) => {
+    setLoading(true);
+    await triggerCrawl(name);
+    await loadCompetitors();
+    setLoading(false);
+    // Refresh global data
+    if (window.refreshData) window.refreshData();
+  };
+
+  const handleRemove = async (name) => {
+    await removeCompetitor(name);
+    await loadCompetitors();
+  };
+
+  return (
+    <div>
+      <Navbar />
+
+      <h1>Market Intelligence Dashboard</h1>
+      <p style={{ color: "#94a3b8" }}>Track competitors, pricing changes, and market positioning</p>
+
+      {/* Show selected domain */}
+      <p style={{ marginTop: "10px" }}>
+        Selected Domain: <b style={{ color: "#60a5fa" }}>{domain || "None"}</b>
+      </p>
+
+      {/* Add Competitor Section */}
+      <div
+        style={{
+          backgroundColor: "#1e293b",
+          padding: "20px",
+          borderRadius: "10px",
+          marginTop: "20px",
+          maxWidth: "500px",
+        }}
+      >
+        <h3>🔍 Add Competitor</h3>
+
+        <input
+          type="text"
+          placeholder="Competitor Name (e.g., Byjus)"
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          style={{
+            display: "block",
+            margin: "10px 0",
+            padding: "10px",
+            width: "100%",
+            backgroundColor: "#020617",
+            color: "white",
+            border: "1px solid #334155",
+            borderRadius: "5px",
+          }}
+        />
+
+        <input
+          type="text"
+          placeholder="Website URL (e.g., https://byjus.com/pricing)"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          style={{
+            display: "block",
+            margin: "10px 0",
+            padding: "10px",
+            width: "100%",
+            backgroundColor: "#020617",
+            color: "white",
+            border: "1px solid #334155",
+            borderRadius: "5px",
+          }}
+        />
+
+        {error && (
+          <div style={{ color: "#ef4444", marginBottom: "10px", fontSize: "14px" }}>
+            {error}
+          </div>
+        )}
+
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          style={{
+            padding: "10px",
+            backgroundColor: loading ? "#3b82f6" : "#2563eb",
+            color: "white",
+            border: "none",
+            borderRadius: "5px",
+            marginTop: "10px",
+            width: "100%",
+            cursor: loading ? "wait" : "pointer",
+            opacity: loading ? 0.7 : 1,
+          }}
+        >
+          {loading ? "Crawling..." : "Add & Analyze Competitor"}
+        </button>
+      </div>
+
+      {/* Crawl Result */}
+      {crawlResult && crawlResult.success && (
+        <div
+          style={{
+            backgroundColor: "#064e3b",
+            padding: "15px",
+            borderRadius: "10px",
+            marginTop: "20px",
+            maxWidth: "500px",
+          }}
+        >
+          <h4 style={{ color: "#34d399", margin: "0 0 10px 0" }}>
+            ✅ Crawl Successful!
+          </h4>
+          <p style={{ margin: "5px 0", fontSize: "14px" }}>
+            <b>Headline:</b> {crawlResult.headline || "N/A"}
+          </p>
+          <p style={{ margin: "5px 0", fontSize: "14px" }}>
+            <b>Pricing Tiers Found:</b> {crawlResult.pricing?.length || 0}
+          </p>
+          <p style={{ margin: "5px 0", fontSize: "14px" }}>
+            <b>Keywords:</b> {crawlResult.keywords?.join(", ") || "N/A"}
+          </p>
+        </div>
+      )}
+
+      {/* Registered Competitors */}
+      <div
+        style={{
+          backgroundColor: "#1e293b",
+          padding: "20px",
+          borderRadius: "10px",
+          marginTop: "20px",
+          maxWidth: "700px",
+        }}
+      >
+        <h3>📊 Tracked Competitors ({Object.keys(competitors).length})</h3>
+
+        {Object.keys(competitors).length === 0 ? (
+          <p style={{ color: "#64748b" }}>No competitors added yet. Add one above!</p>
+        ) : (
+          <div style={{ marginTop: "10px" }}>
+            {Object.entries(competitors).map(([name, url]) => (
+              <div
+                key={name}
+                style={{
+                  backgroundColor: "#0f172a",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  marginBottom: "10px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: "bold", color: "#e2e8f0" }}>{name}</div>
+                  <div style={{ fontSize: "12px", color: "#64748b" }}>{url}</div>
+                </div>
+                <div>
+                  <button
+                    onClick={() => handleQuickCrawl(name)}
+                    disabled={loading}
+                    style={{
+                      padding: "6px 12px",
+                      backgroundColor: "#059669",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      marginRight: "8px",
+                      cursor: "pointer",
+                      fontSize: "12px"
+                    }}
+                  >
+                    Crawl Now
+                  </button>
+                  <button
+                    onClick={() => handleRemove(name)}
+                    style={{
+                      padding: "6px 12px",
+                      backgroundColor: "#dc2626",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "12px"
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={() => navigate("/insights")}
+          style={{
+            padding: "10px 20px",
+            backgroundColor: "#7c3aed",
+            color: "white",
+            border: "none",
+            borderRadius: "5px",
+            marginTop: "15px",
+            cursor: "pointer",
+          }}
+        >
+          View Insights →
+        </button>
+      </div>
+
+      {/* Data Sources from Backend - temporarily disabled for debugging */}
+    </div>
+  );
+}
+
+export default Overview;

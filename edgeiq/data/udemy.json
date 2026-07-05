@@ -1,0 +1,67 @@
+[
+  {
+    "company": "Udemy",
+    "url": "https://www.udemy.com/courses/development/web-development/",
+    "scraped_at": "2026-03-25T21:17:00.037707",
+    "headline": "Learn anything at your own pace",
+    "subheadlines": [
+      "Lifetime access",
+      "30-day refund guarantee"
+    ],
+    "cta_buttons": [
+      "Buy Now",
+      "Try for free"
+    ],
+    "pricing_text": "455 discounted sale affordable lifetime",
+    "full_text": "Udemy self paced recorded beginner intermediate affordable discount sale lifetime access broad topics flexible learn at home on demand video courses",
+    "is_mock": true
+  },
+  {
+    "company": "Udemy",
+    "url": "https://www.udemy.com/courses/development/web-development/",
+    "scraped_at": "2026-06-27T13:26:13.415015",
+    "headline": "Web Development Courses",
+    "subheadlines": [
+      "Site navigation",
+      "More from Udemy",
+      "All Web Development courses",
+      "Not sure? All courses have a 30-day money-back guarantee"
+    ],
+    "cta_buttons": [],
+    "pricing_text": "",
+    "full_text": "Courses with Role Play Programming Languages Database Design & Development Software Development Tools",
+    "is_mock": false
+  },
+  {
+    "company": "Udemy",
+    "url": "https://www.udemy.com/courses/development/web-development/",
+    "scraped_at": "2026-06-27T13:41:30.805575",
+    "headline": "Web Development Courses",
+    "subheadlines": [
+      "Site navigation",
+      "More from Udemy",
+      "All Web Development courses",
+      "Not sure? All courses have a 30-day money-back guarantee"
+    ],
+    "cta_buttons": [],
+    "pricing_text": "",
+    "full_text": "Courses with Role Play Programming Languages Database Design & Development Software Development Tools",
+    "is_mock": false
+  },
+  {
+    "company": "Udemy",
+    "url": "https://www.udemy.com/courses/development/web-development/",
+    "scraped_at": "2026-06-27T14:37:55.275879",
+    "headline": "Web Development Courses",
+    "subheadlines": [
+      "Site navigation",
+      "More from Udemy",
+      "All Web Development courses",
+      "Not sure? All courses have a 30-day money-back guarantee"
+    ],
+    "cta_buttons": [],
+    "pricing_text": "",
+    "full_text": "Courses with Role Play Programming Languages Database Design & Development Software Development Tools",
+    "is_mock": false
+  }
+]

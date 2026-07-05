@@ -1,0 +1,149 @@
+/* --------------------------------------------------------------
+   GLASSMORPHISM BASE – light theme
+   -------------------------------------------------------------- */
+:root {
+  /* ---- Light palette (feel free to tweak) ---- */
+  --bg-primary: #f8fafc;          /* very light slate */
+  --bg-secondary: #ffffff;        /* pure white for cards */
+  --bg-glass: rgba(255, 255, 255, 0.6);
+  --glass-blur: 10px;
+  --border-radius: 12px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+  --text-primary: #1e293b;        /* slate-900 */
+  --text-muted: #64748b;          /* slate-500 */
+  --accent: #4f46e5;              /* indigo-600 */
+  --accent-hover: #4338ca;        /* indigo-700 */
+  --success: #10b981;             /* emerald-500 */
+  --warning: #f59e0b;             /* amber-500 */
+  --error: #ef4444;               /* red-500 */
+}
+
+/* ---- Page background – a soft gradient ---- */
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* ---- Glass container – reusable on any element ---- */
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-md);
+}
+
+/* ---- Card variant – a little more opaque for content ---- */
+.glass-card {
+  background: var(--bg-secondary);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---- Utility spacing ---- */
+.p-2 { padding: 0.5rem; }
+.p-4 { padding: 1rem; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-4 { margin-top: 1rem; }
+.mb-2 { margin-bottom: 0.5rem; }
+.mb-4 { margin-bottom: 1rem; }
+.ml-2 { margin-left: 0.5rem; }
+.mr-2 { margin-right: 0.5rem; }
+
+/* ---- Flex utilities ---- */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-2 { gap: 0.5rem; }
+.gap-4 { gap: 1rem; }
+
+/* ---- Text utilities ---- */
+.text-center { text-align: center; }
+.text-primary { color: var(--text-primary); }
+.text-muted { color: var(--text-muted); }
+.text-accent { color: var(--accent); }
+.text-success { color: var(--success); }
+.text-warning { color: var(--warning); }
+.text-error { color: var(--error); }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.text-sm { font-size: 0.875rem; }
+.text-base { font-size: 1rem; }
+.text-lg { font-size: 1.125rem; }
+.text-xl { font-size: 1.25rem; }
+.text-2xl { font-size: 1.5rem; font-weight: 700; }
+
+/* ---- Borders ---- */
+.border { border-width: 1px; }
+.border-t { border-top-width: 1px; }
+.border-r { border-right-width: 1px; }
+.border-b { border-bottom-width: 1px; }
+.border-l { border-left-width: 1px; }
+.border-solid { border-style: solid; }
+.border-transparent { border-color: transparent; }
+
+/* ---- Rounded ---- */
+.rounded { border-radius: var(--border-radius); }
+.rounded-lg { border-radius: calc(var(--border-radius) * 1.5); }
+
+/* ---- App container ---- */
+.app-container {
+  min-height: 100vh;
+  padding: 2rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* ---- Inputs ---- */
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79,70,229,0.2);
+}
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background-color .2s ease, transform .1s ease;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.95rem;
+}
+.btn-primary   { background: var(--accent); color: white; }
+.btn-primary:hover   { background: var(--accent-hover); }
+.btn-secondary { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); }
+.btn-secondary:hover { background: var(--bg-glass); }
+.btn-success   { background: var(--success); color: white; }
+.btn-warning   { background: var(--warning); color: white; }
+.btn-error     { background: var(--error); color: white; }
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- Misc: hide overflow for glass effect ---- */
+.overflow-hidden { overflow: hidden; }

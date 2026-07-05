@@ -1,0 +1,52 @@
+[
+  {
+    "company": "Scaler",
+    "url": "https://www.scaler.com",
+    "scraped_at": "2026-03-25T10:00:00",
+    "headline": "Become job-ready in 6 months",
+    "subheadlines": ["Live mentorship", "Placement guarantee"],
+    "cta_buttons": ["Apply Now"],
+    "pricing_text": "1,20,000 premium EMI mentorship",
+    "full_text": "job ready placement guarantee mentor live classes career switch hired salary hike cohort intermediate advanced"
+  },
+  {
+    "company": "GeeksforGeeks",
+    "url": "https://www.geeksforgeeks.org",
+    "scraped_at": "2026-03-25T10:05:00",
+    "headline": "Learn coding from scratch",
+    "subheadlines": ["Self paced", "Certification"],
+    "cta_buttons": ["Start Learning"],
+    "pricing_text": "1999 affordable beginner",
+    "full_text": "beginner friendly self paced recorded certification affordable basics introduction programming interview"
+  },
+  {
+    "company": "Coursera",
+    "url": "https://www.coursera.org",
+    "scraped_at": "2026-03-25T10:10:00",
+    "headline": "Learn from top universities",
+    "subheadlines": ["University certificates", "Self paced"],
+    "cta_buttons": ["Join Free"],
+    "pricing_text": "$49 per month subscription",
+    "full_text": "university certificate credential self paced flexible degree online subscription broad audience"
+  },
+  {
+    "company": "Udemy",
+    "url": "https://www.udemy.com",
+    "scraped_at": "2026-03-25T10:15:00",
+    "headline": "Learn anything at your own pace",
+    "subheadlines": ["Lifetime access", "30-day refund"],
+    "cta_buttons": ["Buy Now"],
+    "pricing_text": "455 discounted sale affordable",
+    "full_text": "self paced recorded beginner intermediate affordable discount sale lifetime access broad topics"
+  },
+  {
+    "company": "upGrad",
+    "url": "https://www.upgrad.com",
+    "scraped_at": "2026-03-25T10:20:00",
+    "headline": "Learn and get hired at top companies",
+    "subheadlines": ["Industry mentors", "Live sessions"],
+    "cta_buttons": ["Apply Now"],
+    "pricing_text": "75,000 premium career services",
+    "full_text": "upGrad job placement career services industry mentors live projects intermediate advanced professionals working"
+  }
+]
