@@ -1,266 +1,342 @@
-# DriftWatch — Market Intelligence Engine
+# DriftWatch — Competitive Intelligence & Market Discovery Platform
 
-A competitive intelligence platform that actively crawls competitor websites, detects changes in pricing and messaging, and surfaces actionable market insights.
+A full-stack competitive intelligence platform that automatically discovers relevant market competitors from a company website, verifies their offerings, monitors public pages, detects pricing and messaging shifts, and surfaces grounded actionable intelligence.
 
 ---
 
 ## 🎯 What Problem This Solves
 
-Companies struggle to keep track of their competitive landscape. Market intelligence is scattered across:
-- Competitor websites and pricing pages
-- Review platforms (G2, Trustpilot)
-- Social media and forums
-- Ad libraries and campaigns
+Teams struggle to maintain a continuous, structured view of their competitive landscape:
+- Discovering direct, indirect, and adjacent competitors is manual and irregular.
+- Competitor websites, pricing tiers, and product messaging change silently without notification.
+- Generic AI tools hallucinate competitor details when not grounded in verified web evidence.
+- Raw alerts cause fatigue without explainable ranking and change classification.
 
-**DriftWatch** automates this intelligence gathering, tracks changes over time, and surfaces the ones that actually matter.
+**DriftWatch** solves this end-to-end:
+1. Enter your company URL -> DriftWatch crawls and extracts your structured business profile.
+2. DriftWatch searches for competitor candidates, deduplicates domains, verifies live sites, and scores them.
+3. Review ranked recommendations with explainable evidence and 1-click promotion to active monitoring.
+4. DriftWatch's scheduler continuously crawls tracked competitors, extracts pricing plans, detects changes, and provides evidence-grounded Q&A via Ask AI.
 
 ---
 
-## 🚀 Features
+## 🚀 Implementation Status (Phase 2 Verified)
 
-### ✅ Implemented
-
-| Feature | Description |
-|---------|-------------|
-| **🕷️ Active Web Crawler** | Crawls competitor websites and extracts pricing, messaging, keywords |
-| **💰 Price Detection** | Tracks pricing changes, new/removed plans, feature changes |
-| **🏷️ Keyword Analysis** | Monitors marketing keywords and messaging shifts |
-| **📊 Change Detection** | DeepDiff-based comparison with structured event logging |
-| **⚠️ Anomaly Detection** | Z-score based price anomaly detection |
-| **⏰ Automated Scheduling** | Background crawler runs every 6 hours |
-| **🔌 REST API** | Full FastAPI backend with async PostgreSQL |
-| **💻 React Frontend** | Real-time dashboard with competitor management |
-| **📈 Analytics** | Change summaries, severity tracking, AI insights |
-
-### 🔄 In Progress / Planned
-
-| Feature | Status |
-|---------|--------|
-| Review Platform Scraping (G2, Trustpilot) | 🔴 Not yet implemented |
-| Ad Library Monitoring | 🔴 Not yet implemented |
-| Social Media Listening | 🔴 Not yet implemented |
-| Advanced NLP for Sentiment Analysis | 🔴 Not yet implemented |
-| Whitespace/Trend Analysis | 🟡 Partial (keyword tracking only) |
+| Component / Workflow | Status | Details |
+|---|---|---|
+| **Company Profiling** | ✅ Implemented & Verified | Crawls homepage, extracts headline, meta, business keywords, pricing model, audience, and confidence score. |
+| **Search Provider Adapters** | ✅ Implemented & Verified | Pluggable architecture: `TavilySearchProvider`, `SerpApiSearchProvider`, and `MockSearchProvider`. |
+| **Live External Search** | 🟡 Implemented (Awaiting Keys) | Code ready and unit-tested for Tavily and SerpAPI. Falls back to `MockSearchProvider` when keys are omitted. |
+| **Mock Search Provider** | ✅ Implemented & Verified | Deterministic canned search results for local offline E2E verification. |
+| **Domain Deduplication & Normalization** | ✅ Implemented & Verified | Strips schemes, paths, ports, and subdomains; excludes self-domain and major aggregator platforms. |
+| **Candidate Site Verification** | ✅ Implemented & Verified | Asynchronously crawls candidate landing pages, validates HTTP reachable status, extracts live headline/pricing. |
+| **Explainable Multi-Signal Ranking** | ✅ Implemented & Verified | Weighted scoring (0–100): keyword overlap (35%), content relevance (25%), industry alignment (20%), pricing signal (20%). |
+| **Competitor Classification** | ✅ Implemented & Verified | Classifies candidates into `direct` (≥70), `indirect` (45–69), and `adjacent` (<45). |
+| **Explicit Uncertainty Reporting** | ✅ Implemented & Verified | Lists missing evidence (e.g., missing pricing plans, unreachable sites, missing feature matrices). |
+| **1-Click Tracking Integration** | ✅ Implemented & Verified | Promotes discovered candidate to `CompetitorRegistry` and triggers active crawler monitoring. |
+| **Discovery History & Persistence** | ✅ Implemented & Verified | Stores `DiscoveryRun` and `DiscoveryCandidate` entities with Alembic migration in SQLite/PostgreSQL. |
+| **Scheduled Monitoring** | ✅ Implemented & Verified | Background APScheduler runs every 6 hours to crawl tracked competitors. |
+| **Change Detection Engine** | ✅ Implemented & Verified | Compares HTML/text snapshots, computes price percentage changes, tracks keyword additions/removals, and logs structured events. |
+| **Ask AI Grounded Q&A** | ✅ Implemented & Verified | Answers user questions with strict evidence citations from stored change events and snapshots. |
+| **Security & SSRF Guard** | ✅ Implemented & Verified | Strict URL scheme (HTTP/HTTPS) and IP validation (rejects private, loopback, link-local, AWS metadata endpoints). |
 
 ---
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     REACT FRONTEND                          │
-│              (Port 5173 - Vite Dev Server)                  │
-│  ┌────────────┐  ┌───────────┐  ┌───────────┐  ┌────────┐ │
-│  │ Overview   │  │ Insights  │  │ Changes   │  │ AskAI  │ │
-│  │ (Crawler)  │  │ (Events)  │  │ (History) │  │ (Chat) │ │
-│  └────────────┘  └───────────┘  └───────────┘  └────────┘ │
-└──────────────────────┬────────────────────────────────────┘
-                       │ HTTP
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│              FASTAPI BACKEND (Port 8000)                    │
-│                                                             │
-│  ┌──────────────┐  ┌─────────────┐  ┌────────────────┐   │
-│  │ Crawler API  │  │ Webhook API │  │ Scheduler      │   │
-│  │ /api/crawl/* │  │ /webhook/*  │  │ (APScheduler)  │   │
-│  └──────┬───────┘  └──────┬──────┘  └────────┬─────────┘   │
-│         │                 │                   │             │
-│         ▼                 ▼                   ▼             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              Change Detection Engine                 │   │
-│  │  • Price change detection                          │   │
-│  │  • Keyword change detection                        │   │
-│  │  • Messaging/headline detection                    │   │
-│  │  • Anomaly detection (Z-score)                     │   │
-│  └────────────────────┬────────────────────────────────┘   │
-│                       │                                      │
-│                       ▼                                      │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │         ASYNC POSTGRESQL DATABASE                   │   │
-│  │  • data_snapshots (versioned competitor data)      │   │
-│  │  • change_events (detected changes with diff)      │   │
-│  │  • price_history (time-series for anomaly detect)  │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Frontend["React 19 + Vite Frontend (Port 5173)"]
+        UI_Disc["Discovery Page (/discovery)"]
+        UI_Over["Overview Page (/overview)"]
+        UI_Ins["Insights Page (/insights)"]
+        UI_Ask["Ask AI Page (/ask)"]
+    end
+
+    subgraph Backend["FastAPI Backend (Port 8000)"]
+        API_Disc["/api/discovery/*"]
+        API_Comp["/api/competitors/*"]
+        API_Crawl["/api/crawl/*"]
+        API_AI["/api/ai/query"]
+
+        subgraph Engine["Discovery & Intelligence Engines"]
+            Profiler["CompanyProfiler"]
+            SearchProv["Search Providers (Tavily / SerpAPI / Mock)"]
+            DiscEngine["CompetitorDiscoveryEngine"]
+            Crawler["CompetitorCrawler (SSRF-protected)"]
+            Detector["ChangeDetector (DeepDiff + Rules)"]
+            AskAI["AskAIService (Evidence Grounding)"]
+            Scheduler["APScheduler (6h interval)"]
+        end
+    end
+
+    subgraph Database["Database (SQLite / PostgreSQL)"]
+        DB_Runs[("discovery_runs")]
+        DB_Cands[("discovery_candidates")]
+        DB_Reg[("competitor_registry")]
+        DB_Snaps[("data_snapshots")]
+        DB_Events[("change_events")]
+    end
+
+    UI_Disc -->|POST /api/discovery/analyze| API_Disc
+    UI_Disc -->|POST /api/discovery/track| API_Disc
+    API_Disc --> Profiler
+    Profiler --> Crawler
+    API_Disc --> DiscEngine
+    DiscEngine --> SearchProv
+    DiscEngine --> Crawler
+    DiscEngine --> DB_Runs
+    DiscEngine --> DB_Cands
+    API_Disc -->|1-Click Track| DB_Reg
+
+    UI_Over --> API_Comp
+    UI_Over --> API_Crawl
+    API_Crawl --> Crawler
+    Crawler --> DB_Snaps
+    DB_Snaps --> Detector
+    Detector --> DB_Events
+    Scheduler --> Crawler
+
+    UI_Ask --> API_AI
+    API_AI --> AskAI
+    AskAI --> DB_Events
+    AskAI --> DB_Snaps
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## 🔍 Automated Competitor Discovery Workflow
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | React 19, React Router 7, Vite |
-| Backend | Python 3.11, FastAPI, Async SQLAlchemy |
-| Database | PostgreSQL 15+ (asyncpg) |
-| Crawler | aiohttp, BeautifulSoup4, lxml |
-| Scheduling | APScheduler (asyncio) |
-| Change Detection | DeepDiff, NumPy, SciPy |
+```
+1. Target Website Submission
+   └─ User submits URL (e.g., https://yourcompany.com) on the /discovery dashboard.
+
+2. Company Profiling (CompanyProfiler)
+   └─ Bounded crawl extracts title, meta description, business keywords, pricing model, and target audience.
+
+3. Search Query Generation
+   └─ Synthesizes targeted queries:
+      • "top competitors to {company} {industry}"
+      • "alternatives to {company} {keywords}"
+      • "best companies offering {industry} {keywords}"
+
+4. Candidate Search Retrieval
+   └─ Queries configured provider (Tavily, SerpAPI, or Mock fallback).
+
+5. Domain Deduplication & Normalization
+   └─ Extracts root domain, strips subdomains/paths/protocols.
+   └─ Filters out own domain and aggregators (Google, YouTube, Reddit, Wikipedia, GitHub, etc.).
+
+6. Verification Crawl (CompetitorCrawler)
+   └─ Asynchronously verifies candidate landing page availability and extracts live content.
+
+7. Multi-Signal Scoring & Classification
+   └─ Computes explainable match score (0–100) across keyword overlap, snippet match, industry, and pricing.
+   └─ Classifies candidate as Direct, Indirect, or Adjacent.
+
+8. Uncertainty & Missing Evidence Reporting
+   └─ Explicitly lists missing evidence (e.g. unverified landing page, undetected pricing).
+
+9. User Review & 1-Click Promotion
+   └─ User reviews recommendations, dismisses noise, or clicks "Track Competitor" to promote candidate into active 6-hour monitoring.
+```
 
 ---
 
-## 📦 Installation
+## 🛠️ Technology Stack
+
+| Layer | Technologies |
+|---|---|
+| **Frontend** | React 19.2, React Router 7.13, Vite 8.1, Tailwind CSS |
+| **Backend** | Python 3.14+, FastAPI 0.115+, Pydantic v2, HTTPX, aiohttp |
+| **Data & Persistence** | SQLAlchemy 2.0 (AsyncIO), aiosqlite, asyncpg, Alembic 1.14+ |
+| **HTML Parsing & NLP** | BeautifulSoup4, lxml, DeepDiff |
+| **Search Providers** | Tavily API adapter, SerpAPI Google adapter, Mock adapter |
+| **Scheduling** | APScheduler 3.10+ (AsyncIOScheduler) |
+| **Testing & E2E** | pytest 9.1+, pytest-asyncio, Playwright (Chromium) |
+
+---
+
+## 📦 Installation & Setup
 
 ### Prerequisites
-- Python 3.9+
-- PostgreSQL 15+
-- Node.js 18+
+- Python 3.10+ (tested on Python 3.14.3)
+- Node.js 18+ (tested on Node.js 22+)
+- SQLite (default development database) or PostgreSQL 15+
 
-### Windows Setup
+### 1. Clone & Environment Setup
 
-```powershell
-# Run the automated setup script
-.\setup_and_run.ps1
+```bash
+git clone https://github.com/Rohith-S378/DriftWatch.git
+cd DriftWatch
 
-# Or manually:
+# Create Python virtual environment
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+# On Windows:
+venv\Scripts\activate
+# On Linux/macOS:
+source venv/bin/activate
+
+# Install backend dependencies
 pip install -r requirements.txt
 
-# Create .env file
+# Setup environment configuration
 cp .env.example .env
-# Edit .env with your database credentials
+```
 
+### 2. Configure Environment (`.env`)
+
+```env
+DATABASE_URL=sqlite+aiosqlite:///./sirius.db
+WEBHOOK_SECRET=your-webhook-secret
+PRICE_CHANGE_THRESHOLD_PCT=5.0
+ANOMALY_ZSCORE_THRESHOLD=2.5
+
+# Discovery Search Provider ("auto", "tavily", "serpapi", "mock")
+DISCOVERY_SEARCH_PROVIDER=auto
+DISCOVERY_MAX_CANDIDATES=10
+
+# Optional live search provider keys (leave empty to use MockSearchProvider):
+# TAVILY_API_KEY=tvly-xxxxxxxxxxxx
+# SERPAPI_API_KEY=xxxxxxxxxxxxxxxx
+
+# Set to True ONLY for running local tests against 127.0.0.1:
+ALLOW_LOCAL_CRAWLS=False
+```
+
+### 3. Database Migrations
+
+Apply Alembic migrations to set up core monitoring and Phase 2 discovery tables:
+
+```bash
+alembic upgrade head
+```
+
+### 4. Install Frontend Dependencies
+
+```bash
 cd frontend
 npm install
 cd ..
-```
-
-### Environment Variables
-
-Create a `.env` file:
-
-```env
-DATABASE_URL=postgresql+asyncpg://user:password@localhost/driftwatch_db
-WEBHOOK_SECRET=your-webhook-secret-key
-PRICE_CHANGE_THRESHOLD_PCT=5.0
-ANOMALY_ZSCORE_THRESHOLD=2.5
 ```
 
 ---
 
 ## 🚀 Running the Application
 
-### 1. Start Backend
+### Start Backend
 
-```powershell
-.\venv\Scripts\Activate.ps1
-cd driftwatch
+```bash
 uvicorn app.main:app --reload --port 8000
 ```
+Interactive API documentation: `http://localhost:8000/docs`
 
-API docs available at: `http://localhost:8000/docs`
+### Start Frontend
 
-### 2. Start Frontend (new terminal)
-
-```powershell
-cd driftwatch\frontend
+```bash
+cd frontend
 npm run dev
 ```
-
-App available at: `http://localhost:5173`
-
----
-
-## 📡 API Endpoints
-
-### Crawler Management
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/competitors/add` | Register competitor for auto-crawl |
-| GET | `/api/competitors` | List registered competitors |
-| DELETE | `/api/competitors/{name}` | Remove competitor |
-| POST | `/api/crawl/trigger` | Trigger immediate crawl |
-| POST | `/api/crawl/single` | One-time crawl (not scheduled) |
-
-### Data & Events
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/sources` | List all data sources |
-| GET | `/api/events` | Get all change events |
-| GET | `/api/events/{source_id}` | Get events for specific source |
-| POST | `/webhook/ingest` | Push data via webhook |
+Dashboard available at: `http://localhost:5173`
 
 ---
 
-## 🎮 Usage Example
+## 📡 Key API Endpoints
 
-### Adding a Competitor via Frontend
+### Automated Competitor Discovery (Phase 2)
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/discovery/analyze` | Profiles target website, searches, verifies, ranks, and returns candidate recommendations. |
+| `GET` | `/api/discovery/runs` | Lists historical discovery runs. |
+| `GET` | `/api/discovery/runs/{id}` | Retrieves a discovery run by ID with candidates and profile. |
+| `POST` | `/api/discovery/track` | Promotes a discovered candidate into the active competitor registry for monitoring. |
+| `POST` | `/api/discovery/dismiss/{id}` | Dismisses a discovery candidate. |
 
-1. Go to `http://localhost:5173`
-2. Select domain (EdTech, FinTech, etc.)
-3. Enter competitor name and URL
-4. Click "Add & Analyze Competitor"
-5. System crawls, extracts data, and shows results
+### Competitor Monitoring & Crawler
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/competitors/add` | Registers competitor for scheduled crawls (with deduplication). |
+| `GET` | `/api/competitors` | Lists all registered competitors. |
+| `DELETE` | `/api/competitors/{name}` | Removes competitor from monitoring. |
+| `POST` | `/api/crawl/single` | Executes an on-demand crawl and runs change detection. |
+| `POST` | `/api/crawl/trigger` | Triggers immediate crawl of all registered competitors. |
 
-### Adding via API
+### Intelligence & Q&A
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/events` | Retrieves all detected change events across competitors. |
+| `GET` | `/api/events/{source_id}` | Retrieves change events for a specific competitor. |
+| `POST` | `/api/ai/query` | Ask AI: answers queries with citations grounded in snapshots and change events. |
+
+---
+
+## 🧪 Testing & Verification
+
+The test suite includes unit tests, API contract tests, pipeline lifecycle checks, migrations tests, and headless browser E2E workflows.
+
+### 1. Pytest Test Suite (119 Tests)
 
 ```bash
-curl -X POST http://localhost:8000/api/competitors/add \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Byjus", "url": "https://byjus.com/pricing"}'
+python -m pytest
 ```
+- Covers URL validator & SSRF prevention (30 tests)
+- Change detector, price thresholds, keyword shifts (24 tests)
+- Extractor normalization, currencies, plans (31 tests)
+- Competitor discovery, mock adapter, domain normalization, ranking (6 tests)
+- Hardening, webhook secret, DB persistence (5 tests)
+- Alembic upgrade, downgrade, idempotency (3 tests)
+- Grounded Ask AI queries (5 tests)
+- API contracts & SSRF rejection (10 tests)
+- Full crawl pipeline lifecycle (5 tests)
 
-### Triggering Manual Crawl
+### 2. End-to-End Verification Pipeline (9 Steps)
 
 ```bash
-curl -X POST http://localhost:8000/api/crawl/trigger
+python scripts/run_e2e.py
 ```
+Launches backend on port 8000, runs against an isolated mock site on port 8088, and verifies:
+1. Health check
+2. Competitor registration
+3. Case-insensitive duplicate rejection
+4. Baseline snapshot (0 change events)
+5. Unchanged crawl (0 change events)
+6. Controlled modified crawl (detects 7 events: price changes, keyword shifts)
+7. Dashboard & Ask AI grounded Q&A
+8. Unreachable host error handling
+9. Persistence post-restart
 
----
+### 3. Full Browser E2E Suite (22 Checks via Playwright)
 
-## 📁 Project Structure
-
+```bash
+python scripts/browser_e2e.py
 ```
-driftwatch/
-├── app/
-│   ├── main.py
-│   ├── services/
-│   │   ├── crawler.py
-│   │   ├── scheduler.py
-│   │   ├── change_detector.py
-│   │   └── snapshot_service.py
-│   ├── db/
-│   │   └── database.py
-│   └── models/
-│       └── models.py
-├── frontend/src/
-│   ├── App.jsx
-│   ├── api.js
-│   └── pages/
-│       ├── Overview.jsx
-│       └── Insights.jsx
-├── requirements.txt
-└── setup_and_run.ps1
-```
+Verifies the complete React application in headless Chromium:
+- Empty states (Overview, Insights, Changes, Ask AI)
+- Competitor registration & crawl execution
+- Real-time event notifications & Ask AI interaction
+- Automated Discovery workflow (/discovery): website input, profile generation, candidate recommendations list
+- 1-Click Track integration: promotes discovered candidate to active monitoring
+- Console error inspection (0 unexpected errors)
 
 ---
 
-## 🐛 Known Issues
+## 🔒 Security & Safe Operation
 
-1. **Crawler limitations**: Some sites with heavy JavaScript may not crawl properly (needs Playwright/Selenium)
-2. **No authentication**: Currently no user auth (add JWT for production)
-3. **In-memory competitor registry**: Should move to a database table
-4. **No tests**: Unit/integration tests not written yet
-
----
-
-## 🚀 Future Enhancements
-
-- [ ] Review platform scraping (G2, Trustpilot, Capterra)
-- [ ] Ad library monitoring (Facebook Ad Library, Google Ads)
-- [ ] Social listening (Twitter/X, Reddit, LinkedIn)
-- [ ] NLP for sentiment analysis and theme extraction
-- [ ] ML-based trend prediction
-- [ ] Slack/Teams integration for alerts
-- [ ] PDF report generation
-- [ ] User authentication and multi-tenancy
+- **SSRF Protection**: All user-supplied crawl and discovery URLs are validated using `app.services.url_validator.py`. Private IPs (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopbacks (`127.0.0.1`), link-local/cloud metadata (`169.254.169.254`), and non-HTTP protocols are strictly rejected.
+- **Local Dev Toggle**: `ALLOW_LOCAL_CRAWLS` is `False` by default and only enabled in isolated automated test harnesses.
+- **Explainable Scores**: Match scores are computed deterministically from transparent weights without black-box hallucinations.
+- **Database Safety**: Production credentials and database files (`sirius.db`) are excluded via `.gitignore`. Isolated databases are used during test runs.
 
 ---
 
-## 📝 Origin
+## 🗺️ Roadmap (Future Enhancements)
 
-Originally built as a team hackathon project at SNUC Hacks 2026. Actively developed and extended solo since — including the crawler scheduler, anomaly detection, and dashboard rework.
+- [ ] Multi-tenant user authentication (OAuth2 / JWT).
+- [ ] Live search provider integration verification using verified Tavily / SerpAPI API keys.
+- [ ] Review platform scraping (G2, Trustpilot, Capterra).
+- [ ] Ad library monitoring (Meta Ad Library, Google Ads Transparency).
+- [ ] Email & Slack webhook alerts for critical price changes.
+- [ ] Exportable PDF & CSV executive intelligence briefs.
 
 ---
 
