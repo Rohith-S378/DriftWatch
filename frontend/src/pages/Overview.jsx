@@ -276,6 +276,18 @@ function Overview({ sources }) {
         </div>
       )}
 
+      {crawlResult && !crawlResult.success && (
+        <div className="glass-card p-6 mb-6 border border-red-500/30 bg-red-500/5">
+          <h4 className="font-semibold mb-2 text-error">❌ Crawl Failed</h4>
+          <div className="space-y-1 text-sm text-muted">
+            <p><b>Reason:</b> {crawlResult.error || "The crawler could not fetch or parse the competitor site."}</p>
+            {crawlResult.attempts !== undefined && (
+              <p><b>Attempts:</b> {crawlResult.attempts}</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Registered Competitors */}
       <div className="glass-card p-6 mb-6">
         {/* Get valid competitors object or empty object if invalid */}

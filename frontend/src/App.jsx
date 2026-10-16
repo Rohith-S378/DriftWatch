@@ -10,8 +10,9 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Overview from "./pages/Overview";
 import Insights from "./pages/Insights";
 import Changes from "./pages/Changes";
-import AskAI from "./pages/askAI";
+import AskAI from "./pages/AskAI";
 import DomainSelect from "./pages/DomainSelect";
+import Discovery from "./pages/Discovery";
 
 function App() {
   const [pythonOk, setPythonOk] = useState(null)
@@ -61,6 +62,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<DomainSelect />} />
+          <Route path="/discovery" element={<Discovery />} />
           <Route path="/overview" element={<Overview sources={sources} />} />
           <Route path="/insights" element={<Insights events={events} sources={sources} />} />
           <Route path="/changes" element={<Changes events={events} sources={sources} />} />

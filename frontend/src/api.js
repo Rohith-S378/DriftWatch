@@ -103,7 +103,42 @@ export async function triggerCrawl(sourceId = null) {
 }
 
 export async function crawlSingle(sourceId, url) {
-  return await safePost(`${PYTHON_API}/api/crawl/single`, { source_id: sourceId, url })
+  return await safePost(`${PYTHON_API}/api/crawl/single`, {
+    source_id: sourceId,
+    url: url,
+  })
+}
+
+// ── ASK AI (grounded intelligence Q&A) ───────────────────────────────────────
+
+export async function askAI({ question, source_id = null }) {
+  return await safePost(`${PYTHON_API}/api/ai/query`, { question, source_id })
+}
+
+// ── COMPETITOR DISCOVERY (PHASE 2) ──────────────────────────────────────────
+
+export async function analyzeAndDiscover(url) {
+  return await safePost(`${PYTHON_API}/api/discovery/analyze`, { url })
+}
+
+export async function listDiscoveryRuns() {
+  const data = await safeFetch(`${PYTHON_API}/api/discovery/runs`)
+  return data.error ? [] : data
+}
+
+export async function getDiscoveryRun(runId) {
+  return await safeFetch(`${PYTHON_API}/api/discovery/runs/${runId}`)
+}
+
+export async function trackDiscoveryCandidate(candidateId, customName = null) {
+  return await safePost(`${PYTHON_API}/api/discovery/track`, {
+    candidate_id: candidateId,
+    custom_name: customName,
+  })
+}
+
+export async function dismissDiscoveryCandidate(candidateId) {
+  return await safePost(`${PYTHON_API}/api/discovery/dismiss/${candidateId}`, {})
 }
 
 // ── FROM NODE.JS LAYER ────────────────────────────────────────────────────────

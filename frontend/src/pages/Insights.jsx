@@ -7,7 +7,7 @@ function Insights({ events, sources }) {
       return {
         totalChanges: 0,
         categories: {},
-        severityDistribution: {},
+        severityDistribution: { critical: 0, high: 0, medium: 0, low: 0 },
         timelineData: [],
         recentChanges: [],
         insights: [],
