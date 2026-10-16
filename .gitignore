@@ -74,6 +74,15 @@ logs/
 Thumbs.db
 desktop.ini
 node_modules/
+
+# ========================
+# Artifacts & Test Outputs
+# ========================
+shot_*.png
+disc_resp.json
+server_pids.txt
+*.bak
+
 # ========================
 # IDE
 # ========================

@@ -15,5 +15,12 @@ class Settings(BaseSettings):
     INTERNAL_SECRET: Optional[str] = None
     PRICE_CHANGE_THRESHOLD_PCT: float = 5.0
     ANOMALY_ZSCORE_THRESHOLD: float = 2.5
+    ALLOW_LOCAL_CRAWLS: bool = False
+
+    # Competitor Discovery settings
+    TAVILY_API_KEY: Optional[str] = None
+    SERPAPI_API_KEY: Optional[str] = None
+    DISCOVERY_SEARCH_PROVIDER: str = "auto"  # "auto", "tavily", "serpapi", "mock"
+    DISCOVERY_MAX_CANDIDATES: int = 10
 
 settings = Settings()
