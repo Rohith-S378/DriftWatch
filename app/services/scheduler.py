@@ -5,7 +5,8 @@ Runs crawls every N hours and ingests results automatically.
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from typing import Dict, List, Optional
 import asyncio
 import logging
@@ -102,7 +103,8 @@ class CrawlScheduler:
                             headline_selector: Optional[str] = None,
                             price_selector: Optional[str] = None,
                             feature_selector: Optional[str] = None,
-                            keyword_extraction: bool = True) -> bool:
+                            keyword_extraction: bool = True,
+                            allow_local: bool = False) -> bool:
         """
         Register a competitor for auto-crawling.
 
@@ -115,12 +117,24 @@ class CrawlScheduler:
             keyword_extraction: Whether to extract keywords from text (default True)
 
         Returns:
-            True if added, False if name already exists
+            True if added, False if name already exists or URL fails SSRF safety check
         """
+        from app.services.url_validator import validate_crawl_url, URLValidationError
+        from app.config import settings
+
+        # SSRF-safe URL validation
+        try:
+            validate_crawl_url(url, allow_local=allow_local or settings.ALLOW_LOCAL_CRAWLS)
+        except URLValidationError as exc:
+            logger.warning(f"Rejecting competitor {name}: invalid or unsafe URL '{url}': {exc}")
+            return False
+        clean_name = name.strip()
         async with async_session() as session:
-            # Check if competitor already exists
+            # Check if competitor already exists (case-insensitive)
             result = await session.execute(
-                select(CompetitorRegistry).where(CompetitorRegistry.source_id == name)
+                select(CompetitorRegistry).where(
+                    func.lower(CompetitorRegistry.source_id) == clean_name.lower()
+                )
             )
             existing = result.scalar_one_or_none()
             if existing:
@@ -128,30 +142,41 @@ class CrawlScheduler:
 
             # Create new competitor registry entry
             competitor = CompetitorRegistry(
-                source_id=name,
-                url=url,
+                source_id=clean_name,
+                url=url.strip(),
                 headline_selector=headline_selector,
                 price_selector=price_selector,
                 feature_selector=feature_selector,
                 keyword_extraction=keyword_extraction
             )
             session.add(competitor)
-            await session.commit()
-            logger.info(f"Added competitor: {name} -> {url}")
+            try:
+                await session.commit()
+            except IntegrityError:
+                # Race condition: a concurrent request inserted a competitor
+                # that collides on the case-insensitive unique index between
+                # our app-level check and this commit. Treat it as a duplicate.
+                await session.rollback()
+                logger.warning(f"Competitor '{clean_name}' collided on insert (duplicate)")
+                return False
+            logger.info(f"Added competitor: {clean_name} -> {url}")
             return True
 
     async def remove_competitor(self, name: str) -> bool:
         """Remove a competitor from auto-crawl."""
+        clean_name = name.strip()
         async with async_session() as session:
             result = await session.execute(
-                select(CompetitorRegistry).where(CompetitorRegistry.source_id == name)
+                select(CompetitorRegistry).where(
+                    func.lower(CompetitorRegistry.source_id) == clean_name.lower()
+                )
             )
             competitor = result.scalar_one_or_none()
             if not competitor:
                 return False
             await session.delete(competitor)
             await session.commit()
-            logger.info(f"Removed competitor: {name}")
+            logger.info(f"Removed competitor: {clean_name}")
             return True
 
     async def list_competitors(self) -> List[Dict[str, str]]:

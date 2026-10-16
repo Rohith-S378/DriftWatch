@@ -9,6 +9,16 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import re
 
+from app.services.url_validator import validate_crawl_url, URLValidationError
+
+
+# Maximum number of attempts per crawl (initial + retries).
+MAX_ATTEMPTS = 3
+# Base delay in seconds between retries (exponential backoff: 1s, 2s, 4s...).
+RETRY_BASE_DELAY = 1.0
+# HTTP status codes that are worth retrying (transient).
+_RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
+
 
 @dataclass
 class CrawlResult:
@@ -21,23 +31,24 @@ class CrawlResult:
     raw_html: str
     success: bool
     error: Optional[str] = None
+    attempts: int = 0
 
 
 class CompetitorCrawler:
     """Crawls competitor websites and extracts structured data."""
-    
+
     # Common CSS selectors for pricing pages
     PRICE_SELECTORS = [
         ".pricing-plan", ".plan", "[class*='price']", "[class*='plan']",
         ".tier", ".package", "[class*='tier']", "[class*='package']",
         "#pricing .plan", ".pricing-table tr", ".subscription-option"
     ]
-    
+
     HEADLINE_SELECTORS = [
         "h1", ".hero h1", ".headline", "[class*='headline']",
         ".title", "[class*='title']", ".tagline", "[class*='tagline']"
     ]
-    
+
     FEATURE_KEYWORDS = {
         "ai", "exam", "skills", "coaching", "unlimited", "hints", "pro",
         "starter", "enterprise", "basic", "free", "trial", "discount",
@@ -45,12 +56,13 @@ class CompetitorCrawler:
         "certification", "placement", "job", "career", "learning",
         "course", "module", "lesson", "quiz", "test", "assessment"
     }
-    
+
     async def crawl(self, source_id: str, url: str,
                     headline_selector: Optional[str] = None,
                     price_selector: Optional[str] = None,
                     feature_selector: Optional[str] = None,
-                    keyword_extraction: bool = True) -> CrawlResult:
+                    keyword_extraction: bool = True,
+                    allow_local: bool = False) -> CrawlResult:
         """
         Crawl a competitor website and extract intelligence.
 
@@ -61,50 +73,17 @@ class CompetitorCrawler:
             price_selector: CSS selector for pricing plans (optional, uses default if None)
             feature_selector: CSS selector for features (optional, uses default if None)
             keyword_extraction: Whether to extract keywords from text (default True)
+            allow_local: When True, permit loopback/private URLs for local
+                development and end-to-end testing (never enable in production).
 
         Returns:
             CrawlResult with extracted data
         """
+        # SSRF-safe URL validation: reject loopback/private/link-local targets
+        # before any outbound HTTP request is made.
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                }
-                async with session.get(url, headers=headers) as resp:
-                    if resp.status != 200:
-                        return CrawlResult(
-                            source_id=source_id,
-                            url=url,
-                            headline="",
-                            pricing=[],
-                            features=[],
-                            keywords=[],
-                            raw_html="",
-                            success=False,
-                            error=f"HTTP {resp.status}"
-                        )
-
-                    html = await resp.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-
-                    # Extract all components
-                    headline = self._extract_headline(soup, headline_selector)
-                    pricing = self._extract_pricing(soup, price_selector)
-                    features = self._extract_features(soup, feature_selector)
-                    keywords = self._extract_keywords(soup, headline, keyword_extraction)
-
-                    return CrawlResult(
-                        source_id=source_id,
-                        url=url,
-                        headline=headline,
-                        pricing=pricing,
-                        features=features,
-                        keywords=keywords,
-                        raw_html=html[:10000],  # Truncate for storage
-                        success=True
-                    )
-
-        except Exception as e:
+            safe_url = validate_crawl_url(url, allow_local=allow_local)
+        except URLValidationError as exc:
             return CrawlResult(
                 source_id=source_id,
                 url=url,
@@ -114,8 +93,90 @@ class CompetitorCrawler:
                 keywords=[],
                 raw_html="",
                 success=False,
-                error=str(e)
+                error=f"URL rejected: {exc}",
+                attempts=0,
             )
+
+        last_error: Optional[str] = None
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    }
+                    async with session.get(safe_url, headers=headers) as resp:
+                        # Retry on transient server-side statuses.
+                        if resp.status in _RETRYABLE_STATUS and attempt < MAX_ATTEMPTS:
+                            last_error = f"HTTP {resp.status} (retrying)"
+                            await asyncio.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+                            continue
+
+                        if resp.status != 200:
+                            return CrawlResult(
+                                source_id=source_id,
+                                url=safe_url,
+                                headline="",
+                                pricing=[],
+                                features=[],
+                                keywords=[],
+                                raw_html="",
+                                success=False,
+                                error=f"HTTP {resp.status}",
+                                attempts=attempt,
+                            )
+
+                        html = await resp.text()
+                        soup = BeautifulSoup(html, 'html.parser')
+
+                        # Extract all components
+                        headline = self._extract_headline(soup, headline_selector)
+                        pricing = self._extract_pricing(soup, price_selector)
+                        features = self._extract_features(soup, feature_selector)
+                        keywords = self._extract_keywords(soup, headline, keyword_extraction)
+
+                        return CrawlResult(
+                            source_id=source_id,
+                            url=safe_url,
+                            headline=headline,
+                            pricing=pricing,
+                            features=features,
+                            keywords=keywords,
+                            raw_html=html[:10000],  # Truncate for storage
+                            success=True,
+                            attempts=attempt,
+                        )
+            except (asyncio.TimeoutError, aiohttp.ClientError) as exc:
+                last_error = str(exc)
+                if attempt < MAX_ATTEMPTS:
+                    await asyncio.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+                    continue
+            except Exception as e:
+                # Non-retryable error: fail immediately without burning retries.
+                return CrawlResult(
+                    source_id=source_id,
+                    url=safe_url,
+                    headline="",
+                    pricing=[],
+                    features=[],
+                    keywords=[],
+                    raw_html="",
+                    success=False,
+                    error=str(e),
+                    attempts=attempt,
+                )
+
+        return CrawlResult(
+            source_id=source_id,
+            url=safe_url,
+            headline="",
+            pricing=[],
+            features=[],
+            keywords=[],
+            raw_html="",
+            success=False,
+            error=last_error or f"Failed after {MAX_ATTEMPTS} attempts",
+            attempts=MAX_ATTEMPTS,
+        )
     
     def _extract_headline(self, soup: BeautifulSoup, selector: Optional[str] = None) -> str:
         """Extract primary headline/messaging."""
@@ -132,7 +193,8 @@ class CompetitorCrawler:
     def _extract_pricing(self, soup: BeautifulSoup, selector: Optional[str] = None) -> List[Dict[str, Any]]:
         """Extract pricing tiers and plans."""
         plans = []
-        
+        seen = set()
+
         if selector:
             selectors = [selector]
         else:
@@ -142,15 +204,23 @@ class CompetitorCrawler:
             elements = soup.select(sel)
             for elem in elements:
                 plan = self._parse_plan_element(elem)
-                if plan:
-                    plans.append(plan)
-        
+                if plan and plan.get("price"):
+                    key = (plan["name"].strip().lower(), plan["price"].strip())
+                    if key not in seen:
+                        seen.add(key)
+                        plans.append(plan)
+            # If default selectors matched plans on a higher-level container,
+            # break to prevent nested selectors (like [class*='price']) from
+            # extracting fragment duplicate plans.
+            if plans and not selector:
+                break
+
         # Also search for price patterns in text
         if not plans:
             plans = self._extract_prices_from_text(soup)
-        
+
         return plans
-    
+
     def _parse_plan_element(self, elem: BeautifulSoup) -> Optional[Dict[str, Any]]:
         """Parse a single pricing plan element."""
         try:
@@ -159,7 +229,7 @@ class CompetitorCrawler:
             name_elem = elem.select_one("h2, h3, .plan-name, [class*='name'], .title")
             if name_elem:
                 name = name_elem.get_text(strip=True)
-            
+
             # Get price
             price = ""
             price_elem = elem.select_one(".price, [class*='price'], .amount, .cost")
@@ -171,15 +241,15 @@ class CompetitorCrawler:
                 price_match = re.search(r'[₹$£€]\s*\d+(?:,\d{3})*(?:\.\d{2})?', text)
                 if price_match:
                     price = price_match.group(0)
-            
-            # Get features
+
+            # Get features - prefer li items, otherwise leaf feature elements
             features = []
-            feature_elems = elem.select("li, .feature, [class*='feature']")
+            feature_elems = elem.select("li") or elem.select(".feature")
             for f in feature_elems:
                 feat_text = f.get_text(strip=True)
                 if feat_text and len(feat_text) > 3:
                     features.append(feat_text)
-            
+
             if name or price:
                 return {
                     "name": name or "Plan",
@@ -256,13 +326,15 @@ crawler = CompetitorCrawler()
 
 async def crawl_competitor(competitor: Dict[str, Any]) -> CrawlResult:
     """Convenience function to crawl a single competitor."""
+    from app.config import settings
     return await crawler.crawl(
         source_id=competitor["source_id"],
         url=competitor["url"],
         headline_selector=competitor.get("headline_selector"),
         price_selector=competitor.get("price_selector"),
         feature_selector=competitor.get("feature_selector"),
-        keyword_extraction=competitor.get("keyword_extraction", True)
+        keyword_extraction=competitor.get("keyword_extraction", True),
+        allow_local=settings.ALLOW_LOCAL_CRAWLS
     )
 
 

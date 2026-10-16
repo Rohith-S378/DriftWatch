@@ -11,7 +11,7 @@ def extract_price(text: str) -> Optional[float]:
     if match:
         return float(match.group(1))
     # fallback: any number
-    match = re.search(r'\d+(?:\.\d+)?', text)
+    match = re.search(r'(\d+(?:\.\d+)?)', text)
     if match:
         return float(match.group(1))
     return None
@@ -45,10 +45,20 @@ def extract_keywords(text: str) -> Set[str]:
 
 
 def normalize_headline(text: str) -> str:
-    """Normalise for reliable headline comparison."""
+    """Normalise for reliable headline comparison.
+
+    Hyphens and dashes are converted to spaces so that hyphenated
+    wording (e.g. ``Job-Ready``) normalises identically to spaced
+    wording (``Job Ready``). Other punctuation is removed, whitespace
+    is collapsed, and the result is lowercased.
+    """
     if not text:
         return ""
-    # Remove punctuation, collapse whitespace, lowercase
+    # Normalise hyphen/dash variants to spaces first so word boundaries
+    # are preserved (e.g. "Job-Ready" → "job ready", not "jobready").
+    text = re.sub(r"[\u2010-\u2015\-]", " ", text)
+    # Remove remaining punctuation (preserves Unicode word characters).
     text = re.sub(r"[^\w\s]", "", text)
+    # Collapse whitespace and lowercase.
     text = re.sub(r"\s+", " ", text.strip().lower())
     return text
