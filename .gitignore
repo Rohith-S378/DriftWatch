@@ -90,3 +90,14 @@ server_pids.txt
 .idea/
 *.suo
 *.user
+
+# ========================
+# Local Development Artifacts
+# ========================
+tmp_logs/
+prompt.txt
+e2e_browsers.db
+JavaScript/*.lnk
+JavaScript/*.backup
+JavaScript/test.txt
+frontend/dist/
