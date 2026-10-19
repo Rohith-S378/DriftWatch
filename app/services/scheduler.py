@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import Dict, List, Optional
 import asyncio
 import logging
+import uuid
 
 from app.services.crawler import crawl_multiple, CrawlResult
 from app.services.snapshot_service import process_webhook
@@ -53,16 +54,27 @@ class CrawlScheduler:
         """Fetch all competitors from the database."""
         async with async_session() as session:
             result = await session.execute(
-                select(CompetitorRegistry.source_id, CompetitorRegistry.url)
+                select(
+                    CompetitorRegistry.source_id,
+                    CompetitorRegistry.url,
+                    CompetitorRegistry.user_id,
+                )
             )
             competitors = [
-                {"source_id": row.source_id, "url": row.url}
+                {"source_id": row.source_id, "url": row.url, "user_id": row.user_id}
                 for row in result.all()
             ]
             return competitors
 
     async def _scheduled_crawl(self):
-        """Execute scheduled crawl of all registered competitors."""
+        """Execute scheduled crawl of all registered competitors.
+
+        Each competitor row carries its owner's user_id (nullable — legacy
+        rows are NULL). We stamp that ownership onto the ingested snapshots
+        and change events so a user's data never leaks into another user's
+        view, even when the background scheduler (which has no request
+        context) does the ingestion.
+        """
         competitors = await self._get_competitors_from_db()
         if not competitors:
             logger.info("No competitors registered for auto-crawl")
@@ -72,16 +84,25 @@ class CrawlScheduler:
 
         results = await crawl_multiple(competitors)
 
+        # Build a lookup of source_id -> user_id from the competitors we just
+        # crawled, so we can stamp ownership on the ingested rows.
+        owner_by_source = {
+            c["source_id"]: c.get("user_id") for c in competitors
+        }
+
         # Process results and ingest to database
         async with async_session() as session:
             for result in results:
                 if result.success:
-                    await self._ingest_crawl_result(result, session)
+                    await self._ingest_crawl_result(
+                        result, session,
+                        user_id=owner_by_source.get(result.source_id),
+                    )
                     logger.info(f"Successfully crawled and ingested: {result.source_id}")
                 else:
                     logger.error(f"Failed to crawl {result.source_id}: {result.error}")
 
-    async def _ingest_crawl_result(self, result: CrawlResult, session: AsyncSession):
+    async def _ingest_crawl_result(self, result: CrawlResult, session: AsyncSession, user_id: Optional[uuid.UUID] = None):
         """Convert crawl result to webhook payload and process."""
         from app.models.schemas import WebhookPayload
 
@@ -97,14 +118,15 @@ class CrawlScheduler:
             }
         )
 
-        await process_webhook(payload, session)
+        await process_webhook(payload, session, user_id=user_id)
 
     async def add_competitor(self, name: str, url: str,
                             headline_selector: Optional[str] = None,
                             price_selector: Optional[str] = None,
                             feature_selector: Optional[str] = None,
                             keyword_extraction: bool = True,
-                            allow_local: bool = False) -> bool:
+                            allow_local: bool = False,
+                            user_id: Optional[uuid.UUID] = None) -> bool:
         """
         Register a competitor for auto-crawling.
 
@@ -115,6 +137,7 @@ class CrawlScheduler:
             price_selector: CSS selector for pricing plans (optional)
             feature_selector: CSS selector for features (optional)
             keyword_extraction: Whether to extract keywords from text (default True)
+            user_id: Owner UUID (nullable — legacy/background rows stay global)
 
         Returns:
             True if added, False if name already exists or URL fails SSRF safety check
@@ -147,7 +170,8 @@ class CrawlScheduler:
                 headline_selector=headline_selector,
                 price_selector=price_selector,
                 feature_selector=feature_selector,
-                keyword_extraction=keyword_extraction
+                keyword_extraction=keyword_extraction,
+                user_id=user_id,
             )
             session.add(competitor)
             try:
@@ -183,12 +207,19 @@ class CrawlScheduler:
         """List all registered competitors."""
         return await self._get_competitors_from_db()
 
-    async def crawl_now(self, source_id: str = None) -> List[CrawlResult]:
+    async def crawl_now(self, source_id: str = None, user_id: Optional[uuid.UUID] = None) -> List[CrawlResult]:
         """
         Trigger immediate crawl.
 
+        Ownership is always derived from the competitor row itself, never from
+        the caller. Previously the caller's user_id was stamped on every
+        ingested row, which let user A trigger a full crawl and overwrite
+        user B's competitor data with A's ownership — a cross-user leak.
+
         Args:
             source_id: Specific competitor to crawl, or None for all
+            user_id: Accepted for backward compatibility; ignored. Ownership
+                comes from each competitor's own user_id column.
 
         Returns:
             List of crawl results
@@ -205,11 +236,21 @@ class CrawlScheduler:
 
         results = await crawl_multiple(competitors)
 
+        # Map each crawled source back to the competitor row's owner so the
+        # ingested snapshots/events are stamped with the correct user_id
+        # (or NULL for legacy/global rows).
+        owner_by_source = {
+            c["source_id"]: c.get("user_id") for c in competitors
+        }
+
         # Ingest results
         async with async_session() as session:
             for result in results:
                 if result.success:
-                    await self._ingest_crawl_result(result, session)
+                    await self._ingest_crawl_result(
+                        result, session,
+                        user_id=owner_by_source.get(result.source_id),
+                    )
 
         return results
 

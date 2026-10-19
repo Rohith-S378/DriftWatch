@@ -88,3 +88,36 @@ class DiscoveryRunOut(BaseModel):
 class TrackCandidateRequest(BaseModel):
     candidate_id: UUID
     custom_name: Optional[str] = None
+
+
+# ── Auth Schemas ─────────────────────────────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    display_name: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class UserOut(BaseModel):
+    id: UUID
+    email: str
+    display_name: Optional[str] = None
+    is_active: bool
+    is_verified: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuthStatusOut(BaseModel):
+    authenticated: bool
+    user: Optional[UserOut] = None

@@ -1,159 +1,199 @@
-// frontend/src/api.js  ← CREATE THIS FILE
+// frontend/src/api.js
+// Centralized API client with credentials (cookies) and CSRF protection.
 
-const PYTHON_API = "http://localhost:8000"   // FastAPI
-const NODE_API   = "http://localhost:3000"   // Node.js
+const PYTHON_API = "http://localhost:8000";
 
-async function safeFetch(url) {
-  try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.error(`Failed: ${url}`, e.message)
-    return { error: e.message, status: e.message }
-  }
+// Read CSRF token from dw_csrf cookie set by the server
+function getCsrfToken() {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp("(^|;\\s*)dw_csrf=([^;]*)"));
+  return match ? decodeURIComponent(match[2]) : null;
 }
 
-async function safePost(url, body) {
+async function safeFetch(url, options = {}) {
   try {
     const res = await fetch(url, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(body),
-    })
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
-    return await res.json()
+      credentials: "include", // send/receive HttpOnly session cookie
+      ...options,
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let errorDetail = text;
+      try {
+        const parsed = JSON.parse(text);
+        errorDetail = parsed.detail || parsed.message || text;
+      } catch (e) {
+        // use raw text
+      }
+      return { error: errorDetail, status: res.status };
+    }
+    return await res.json();
   } catch (e) {
-    console.error(`POST failed: ${url}`, e.message)
-    return { error: e.message }
+    console.error(`Fetch failed: ${url}`, e.message);
+    return { error: e.message, status: 0 };
   }
 }
 
-// ── FROM PYTHON BACKEND ───────────────────────────────────────────────────────
+async function safePost(url, body, method = "POST") {
+  try {
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    const csrf = getCsrfToken();
+    if (csrf) {
+      headers["X-CSRF-Token"] = csrf;
+    }
 
-export async function checkPythonHealth() {
-  const data = await safeFetch(`${PYTHON_API}/health`)
-  return data !== null && !data.error
+    const res = await fetch(url, {
+      method: method,
+      credentials: "include",
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let errorDetail = text;
+      try {
+        const parsed = JSON.parse(text);
+        errorDetail = parsed.detail || parsed.message || text;
+      } catch (e) {
+        // use raw text
+      }
+      return { error: errorDetail, status: res.status };
+    }
+    return await res.json();
+  } catch (e) {
+    console.error(`${method} failed: ${url}`, e.message);
+    return { error: e.message, status: 0 };
+  }
 }
 
-export async function getSnapshots() {
-  const data = await safeFetch(`${PYTHON_API}/api/snapshots`)
-  return data.error ? [] : data
+// ── AUTHENTICATION API ──────────────────────────────────────────────────────
+
+export async function getAuthStatus() {
+  return await safeFetch(`${PYTHON_API}/api/auth/status`);
+}
+
+export async function getCurrentUser() {
+  return await safeFetch(`${PYTHON_API}/api/auth/me`);
+}
+
+export async function registerUser({ email, password, display_name }) {
+  return await safePost(`${PYTHON_API}/api/auth/register`, {
+    email,
+    password,
+    display_name,
+  });
+}
+
+export async function loginUser({ email, password }) {
+  return await safePost(`${PYTHON_API}/api/auth/login`, {
+    email,
+    password,
+  });
+}
+
+export async function logoutUser() {
+  return await safePost(`${PYTHON_API}/api/auth/logout`, {});
+}
+
+export async function getAuthProviders() {
+  return await safeFetch(`${PYTHON_API}/api/auth/providers`);
+}
+
+export async function initiateGoogleLogin() {
+  return await safeFetch(`${PYTHON_API}/api/auth/google/login`);
+}
+
+// ── BUSINESS APIS ───────────────────────────────────────────────────────────
+
+export async function checkPythonHealth() {
+  const data = await safeFetch(`${PYTHON_API}/health`);
+  return data !== null && !data.error && data.status === "ok";
 }
 
 export async function getSources() {
-  const data = await safeFetch(`${PYTHON_API}/api/sources`)
-  return data.error ? [] : (data?.sources || [])
+  const data = await safeFetch(`${PYTHON_API}/api/sources`);
+  return data.error ? [] : (data?.sources || []);
+}
+
+export async function getAllEvents(limit = 100) {
+  const data = await safeFetch(`${PYTHON_API}/api/events?limit=${limit}`);
+  return data.error ? [] : data;
 }
 
 export async function getChangeHistory(sourceId) {
   const data = await safeFetch(
-    `${PYTHON_API}/webhook/events/${sourceId}?limit=50`
-  )
-  return data.error ? [] : data
+    `${PYTHON_API}/webhook/events/${encodeURIComponent(sourceId)}?limit=50`
+  );
+  return data.error ? [] : data;
 }
-
-// Send scraper data directly to Python webhook
-export async function ingestScraperData(sourceId, sourceType, data) {
-  return await safePost(`${PYTHON_API}/webhook/ingest`, {
-    source_id:   sourceId,
-    source_type: sourceType,
-    data:        data,
-  })
-}
-
-// ── CRAWLER API (NEW) ───────────────────────────────────────────────────────
 
 export async function addCompetitor(name, url) {
-  return await safePost(`${PYTHON_API}/api/competitors/add`, { name, url })
+  return await safePost(`${PYTHON_API}/api/competitors/add`, { name, url });
 }
 
 export async function listCompetitors() {
-  const data = await safeFetch(`${PYTHON_API}/api/competitors`)
-  const list = data.error ? [] : (data?.competitors || [])
-  // Backend returns a LIST of {source_id, url} objects, not a dict keyed
-  // by name. Normalize it here so every consumer (Overview.jsx, App.jsx)
-  // can keep doing Object.entries(competitors) / Object.keys(competitors)
-  // and get real names/urls instead of array indices and raw objects.
-  const normalized = {}
+  const data = await safeFetch(`${PYTHON_API}/api/competitors`);
+  const list = data.error ? [] : (data?.competitors || []);
+  const normalized = {};
   for (const c of list) {
-    if (c && c.source_id) normalized[c.source_id] = c.url
+    if (c && c.source_id) normalized[c.source_id] = c.url;
   }
-  return normalized
+  return normalized;
 }
 
 export async function removeCompetitor(name) {
-  try {
-    const res = await fetch(`${PYTHON_API}/api/competitors/${encodeURIComponent(name)}`, {
-      method: "DELETE"
-    })
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
-    return await res.json()
-  } catch (e) {
-    console.error("Failed to remove competitor:", e.message)
-    return { error: e.message }
-  }
+  return await safePost(
+    `${PYTHON_API}/api/competitors/${encodeURIComponent(name)}`,
+    null,
+    "DELETE"
+  );
 }
 
 export async function triggerCrawl(sourceId = null) {
   const url = sourceId
     ? `${PYTHON_API}/api/crawl/trigger?source_id=${encodeURIComponent(sourceId)}`
-    : `${PYTHON_API}/api/crawl/trigger`
-  return await safePost(url, {})
+    : `${PYTHON_API}/api/crawl/trigger`;
+  return await safePost(url, {});
 }
 
 export async function crawlSingle(sourceId, url) {
   return await safePost(`${PYTHON_API}/api/crawl/single`, {
     source_id: sourceId,
     url: url,
-  })
+  });
 }
-
-// ── ASK AI (grounded intelligence Q&A) ───────────────────────────────────────
 
 export async function askAI({ question, source_id = null }) {
-  return await safePost(`${PYTHON_API}/api/ai/query`, { question, source_id })
+  return await safePost(`${PYTHON_API}/api/ai/query`, { question, source_id });
 }
 
-// ── COMPETITOR DISCOVERY (PHASE 2) ──────────────────────────────────────────
-
 export async function analyzeAndDiscover(url) {
-  return await safePost(`${PYTHON_API}/api/discovery/analyze`, { url })
+  return await safePost(`${PYTHON_API}/api/discovery/analyze`, { url });
 }
 
 export async function listDiscoveryRuns() {
-  const data = await safeFetch(`${PYTHON_API}/api/discovery/runs`)
-  return data.error ? [] : data
+  const data = await safeFetch(`${PYTHON_API}/api/discovery/runs`);
+  return data.error ? [] : data;
 }
 
 export async function getDiscoveryRun(runId) {
-  return await safeFetch(`${PYTHON_API}/api/discovery/runs/${runId}`)
+  return await safeFetch(`${PYTHON_API}/api/discovery/runs/${runId}`);
 }
 
 export async function trackDiscoveryCandidate(candidateId, customName = null) {
   return await safePost(`${PYTHON_API}/api/discovery/track`, {
     candidate_id: candidateId,
     custom_name: customName,
-  })
+  });
 }
 
 export async function dismissDiscoveryCandidate(candidateId) {
-  return await safePost(`${PYTHON_API}/api/discovery/dismiss/${candidateId}`, {})
-}
-
-// ── FROM NODE.JS LAYER ────────────────────────────────────────────────────────
-
-export async function checkNodeHealth() {
-  const data = await safeFetch(`${NODE_API}/health`)
-  return data !== null && !data.error
-}
-
-export async function getRecentEvents() {
-  const data = await safeFetch(`${NODE_API}/api/events`)
-  return data.error ? [] : data
-}
-
-export async function getEventsBySource(sourceId) {
-  const data = await safeFetch(`${NODE_API}/api/events/${sourceId}`)
-  return data.error ? [] : data
+  return await safePost(`${PYTHON_API}/api/discovery/dismiss/${candidateId}`, {});
 }

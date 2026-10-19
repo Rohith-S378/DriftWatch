@@ -1,76 +1,134 @@
 // frontend/src/App.jsx
-import { useEffect, useState } from "react"
-import {
-  checkPythonHealth,
-  getSources,
-  getChangeHistory,
- listCompetitors,        // ADD THIS IMPORT
-} from "./api.js"
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Overview from "./pages/Overview";
-import Insights from "./pages/Insights";
-import Changes from "./pages/Changes";
-import AskAI from "./pages/AskAI";
+// Main application router with AuthProvider, ProtectedRoutes, and Light-Theme Shell
+
+import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Account from "./pages/Account";
 import DomainSelect from "./pages/DomainSelect";
+import Overview from "./pages/Overview";
 import Discovery from "./pages/Discovery";
+import Changes from "./pages/Changes";
+import Insights from "./pages/Insights";
+import AskAI from "./pages/AskAI";
 
-function App() {
-  const [pythonOk, setPythonOk] = useState(null)
-  const [sources, setSources] = useState([])
-  const [events, setEvents] = useState([])
-  const [loading, setLoading] = useState(true)
+import { checkPythonHealth, listCompetitors, getChangeHistory } from "./api";
 
-  useEffect(() => {
-    loadAll()
-  }, [])
+function AppContent() {
+  const [pythonOk, setPythonOk] = useState(null);
+  const [sources, setSources] = useState([]);
+  const [events, setEvents] = useState([]);
 
-  async function loadAll() {
-    setLoading(true)
+  async function loadData() {
+    const py = await checkPythonHealth();
+    setPythonOk(py);
 
-    const py = await checkPythonHealth()
-    setPythonOk(py)
+    try {
+      const registered = await listCompetitors();
+      const activeSourceIds = Object.keys(registered);
+      setSources(activeSourceIds);
 
-    // CHANGED: only pull events for competitors you actually registered,
-    // not every source_id that has ever existed in the DB (which includes
-    // old demo/seed data from udemy/scaler/coursera/gfg).
-    const registered = await listCompetitors()      // { name: url, ... }
-    const activeSourceIds = Object.keys(registered)
-    setSources(activeSourceIds)
-
-    const allEvents = []
-    for (const src of activeSourceIds) {
-      const evts = await getChangeHistory(src)
-      allEvents.push(...evts)
+      const allEvents = [];
+      for (const src of activeSourceIds) {
+        const evts = await getChangeHistory(src);
+        if (Array.isArray(evts)) {
+          allEvents.push(...evts);
+        }
+      }
+      setEvents(allEvents);
+    } catch (err) {
+      console.error("Failed to load competitor data:", err);
     }
-    setEvents(allEvents)
-    setLoading(false)
   }
 
-  window.refreshData = loadAll
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  window.refreshData = loadData;
 
   return (
-    <div className="app-container">
-      <div className="fixed top-4 right-4 flex items-center gap-2 text-xs rounded px-3 py-1"
-           style={{
-             backgroundColor: pythonOk ? "var(--success)" : "var(--error)",
-             color: "white"
-           }}>
-        Backend: {pythonOk ? "Connected" : "Disconnected"}
-        {loading && " (Loading...)"}
-      </div>
+    <Routes>
+      {/* Public Authentication routes */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
 
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<DomainSelect />} />
-          <Route path="/discovery" element={<Discovery />} />
-          <Route path="/overview" element={<Overview sources={sources} />} />
-          <Route path="/insights" element={<Insights events={events} sources={sources} />} />
-          <Route path="/changes" element={<Changes events={events} sources={sources} />} />
-          <Route path="/ask" element={<AskAI />} />
-        </Routes>
-      </BrowserRouter>
-    </div>
+      {/* Protected application routes */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <DomainSelect pythonOk={pythonOk} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/overview"
+        element={
+          <ProtectedRoute>
+            <Overview pythonOk={pythonOk} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/discovery"
+        element={
+          <ProtectedRoute>
+            <Discovery pythonOk={pythonOk} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/changes"
+        element={
+          <ProtectedRoute>
+            <Changes events={events} sources={sources} pythonOk={pythonOk} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/insights"
+        element={
+          <ProtectedRoute>
+            <Insights events={events} sources={sources} pythonOk={pythonOk} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ask"
+        element={
+          <ProtectedRoute>
+            <AskAI pythonOk={pythonOk} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account"
+        element={
+          <ProtectedRoute>
+            <Account pythonOk={pythonOk} />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/overview" replace />} />
+    </Routes>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}

@@ -20,8 +20,9 @@ from app.config import settings
 
 config = context.config
 
-# Set database URL from settings if not explicitly provided
-if not config.get_main_option("sqlalchemy.url"):
+# Set database URL from settings if not explicitly provided or if placeholder
+raw_url = config.get_main_option("sqlalchemy.url")
+if not raw_url or raw_url == "dummy":
     config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 if config.config_file_name is not None:

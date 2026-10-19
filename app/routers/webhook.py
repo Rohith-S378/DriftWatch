@@ -1,11 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.database import get_db
 from app.models.schemas import WebhookPayload, ProcessResult, ChangeEventOut
+from app.models.models import ChangeEvent
 from app.services.snapshot_service import process_webhook, get_recent_events
 from app.services.notifier import notify_node
 from app.config import settings
+from app.auth import require_user
+from app.models.auth import User
 
 router = APIRouter(prefix="/webhook", tags=["Webhook Ingestion"])
 
@@ -38,6 +42,9 @@ async def get_events(
     source_id: str,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
 ):
-    """Fetch recent change events for a given source. Called by Node.js on demand."""
-    return await get_recent_events(source_id, limit, db)
+    """Fetch recent change events for a given source, scoped to the caller's
+    ownership (own rows + legacy/global rows). Requires authentication so
+    competitor data cannot be harvested by unauthenticated callers."""
+    return await get_recent_events(source_id, limit, db, user_id=user.id)

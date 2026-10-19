@@ -18,6 +18,7 @@ async def query_intelligence(
     db: AsyncSession,
     source_id: Optional[str] = None,
     limit: int = 15,
+    user_id: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Search recorded intelligence and synthesize a grounded answer.
@@ -27,6 +28,8 @@ async def query_intelligence(
         db: Database async session
         source_id: Optional competitor filter
         limit: Max events to retrieve for grounding
+        user_id: Optional user UUID; when supplied, includes only rows owned by
+                 that user plus legacy rows (user_id IS NULL).
 
     Returns:
         Dict with question, answer, evidence records, and matched competitor count.
@@ -46,6 +49,12 @@ async def query_intelligence(
     stmt = select(ChangeEvent).order_by(desc(ChangeEvent.created_at)).limit(100)
     if source_id:
         stmt = stmt.where(ChangeEvent.source_id == source_id)
+    if user_id is not None:
+        from app.config import settings
+        if settings.ALLOW_LEGACY_GLOBAL_READS:
+            stmt = stmt.where((ChangeEvent.user_id.is_(None)) | (ChangeEvent.user_id == user_id))
+        else:
+            stmt = stmt.where(ChangeEvent.user_id == user_id)
 
     res = await db.execute(stmt)
     all_events = res.scalars().all()

@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Float, JSON, DateTime, Text, Boolean, Index, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
 from sqlalchemy.sql import func
+from sqlalchemy import ForeignKey
 import uuid
 from app.db.database import Base
 
@@ -9,10 +10,13 @@ class DataSnapshot(Base):
     """Stores every incoming webhook payload as a versioned snapshot."""
     __tablename__ = "data_snapshots"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source_id = Column(String, nullable=False, index=True)   # identifies the data source
     source_type = Column(String, nullable=False)              # e.g. "pricing", "messaging"
     payload = Column(JSON, nullable=False)                    # raw webhook data
+    # Ownership. NULL means a pre-authentication legacy record that is globally
+    # visible to any authenticated user. New records carry the creator's id.
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -20,7 +24,7 @@ class ChangeEvent(Base):
     """Records every detected change with full diff detail."""
     __tablename__ = "change_events"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source_id = Column(String, nullable=False, index=True)
     change_type = Column(String, nullable=False)   # "price", "keyword", "messaging", "anomaly"
     severity = Column(String, nullable=False)       # "low", "medium", "high", "critical"
@@ -29,6 +33,7 @@ class ChangeEvent(Base):
     new_value = Column(Text, nullable=True)
     description = Column(Text, nullable=False)
     notified = Column(Boolean, default=False)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -36,11 +41,12 @@ class PriceHistory(Base):
     """Time-series of extracted prices for anomaly detection."""
     __tablename__ = "price_history"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source_id = Column(String, nullable=False, index=True)
     plan_name = Column(String, nullable=False)
     price = Column(Float, nullable=False)
     currency = Column(String, default="INR")
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -48,9 +54,10 @@ class CompetitorRegistry(Base):
     """Stores competitor URLs and selector templates for crawling."""
     __tablename__ = "competitor_registry"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source_id = Column(String, nullable=False, unique=True, index=True)  # e.g. "competitor_name"
     url = Column(String, nullable=False)  # URL to crawl
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     headline_selector = Column(String, nullable=True)  # CSS selector for headline
     price_selector = Column(String, nullable=True)  # CSS selector for pricing plans
     feature_selector = Column(String, nullable=True)  # CSS selector for features (optional)
@@ -76,13 +83,14 @@ class DiscoveryRun(Base):
     """Tracks a competitor discovery run initiated by entering a company website."""
     __tablename__ = "discovery_runs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     target_url = Column(String, nullable=False)
     normalized_domain = Column(String, nullable=False, index=True)
     company_name = Column(String, nullable=False)
     status = Column(String, default="completed")  # "pending", "completed", "failed"
     company_profile = Column(JSON, nullable=False)
     error = Column(Text, nullable=True)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -90,8 +98,8 @@ class DiscoveryCandidate(Base):
     """Stores discovered competitor candidates and user decisions."""
     __tablename__ = "discovery_candidates"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    run_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(Uuid(as_uuid=True), nullable=False, index=True)
     candidate_name = Column(String, nullable=False)
     website_url = Column(String, nullable=False)
     normalized_domain = Column(String, nullable=False, index=True)
@@ -103,4 +111,5 @@ class DiscoveryCandidate(Base):
     evidence = Column(JSON, nullable=True)
     missing_evidence = Column(JSON, nullable=True)
     status = Column(String, default="suggested")  # "suggested", "tracked", "dismissed"
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

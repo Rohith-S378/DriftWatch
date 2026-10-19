@@ -7,7 +7,12 @@ from typing import Optional
 
 from app.db.database import engine, Base, get_db
 from app.routers import webhook
-from app.models.models import ChangeEvent, DataSnapshot
+from app.auth_router import router as auth_router
+from app.auth import require_user
+from app.csrf import require_csrf
+from app.models.auth import User
+from app.models.models import ChangeEvent, DataSnapshot, CompetitorRegistry
+from app.models import auth  # noqa: F401  (register auth tables in Base.metadata)
 from app.services.scheduler import init_scheduler, shutdown_scheduler, scheduler
 from app.services.crawler import crawler
 from app.models.schemas import ChangeEventOut, AskAIRequest, AskAIResponse, CrawlSingleRequest
@@ -44,6 +49,7 @@ app.add_middleware(
 )
 
 app.include_router(webhook.router)
+app.include_router(auth_router)
 
 
 @app.get("/health")
@@ -51,10 +57,33 @@ async def health():
     return {"status": "ok", "service": "DriftWatch Backend"}
 
 
+def _ownership_filter(model, user_id):
+    """Filter clause: rows the current user owns, plus legacy rows if enabled.
+
+    By default (`ALLOW_LEGACY_GLOBAL_READS=False`), legacy rows (user_id IS NULL)
+    are NOT globally accessible. Only the user's own rows are returned.
+    Administrators can set `ALLOW_LEGACY_GLOBAL_READS=True` in environment
+    if they explicitly choose to allow all authenticated users to read
+    pre-existing legacy records.
+    """
+    from app.config import settings
+
+    if settings.ALLOW_LEGACY_GLOBAL_READS:
+        return (model.user_id.is_(None)) | (model.user_id == user_id)
+    return model.user_id == user_id
+
+
 @app.get("/api/events")
-async def get_all_events(limit: int = 100, db: AsyncSession = Depends(get_db)):
+async def get_all_events(
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+):
     result = await db.execute(
-        select(ChangeEvent).order_by(ChangeEvent.created_at.desc()).limit(limit)
+        select(ChangeEvent)
+        .where(_ownership_filter(ChangeEvent, user.id))
+        .order_by(ChangeEvent.created_at.desc())
+        .limit(limit)
     )
     events = result.scalars().all()
     return [
@@ -74,16 +103,29 @@ async def get_all_events(limit: int = 100, db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/sources")
-async def get_sources(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DataSnapshot.source_id).distinct())
+async def get_sources(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    result = await db.execute(
+        select(DataSnapshot.source_id)
+        .where(_ownership_filter(DataSnapshot, user.id))
+        .distinct()
+    )
     return {"sources": result.scalars().all()}
 
 
 @app.get("/api/events/{source_id}")
-async def get_events_by_source(source_id: str, limit: int = 50, db: AsyncSession = Depends(get_db)):
+async def get_events_by_source(
+    source_id: str,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+):
     result = await db.execute(
         select(ChangeEvent)
         .where(ChangeEvent.source_id == source_id)
+        .where(_ownership_filter(ChangeEvent, user.id))
         .order_by(ChangeEvent.created_at.desc())
         .limit(limit)
     )
@@ -112,7 +154,11 @@ class CompetitorRequest(BaseModel):
 
 
 @app.post("/api/competitors/add")
-async def add_competitor(req: CompetitorRequest):
+async def add_competitor(
+    req: CompetitorRequest,
+    user: User = Depends(require_user),
+    _: str = Depends(require_csrf),
+):
     """Add a competitor for auto-crawling.
 
     The scheduler returns False for two *different* failure modes: a genuine
@@ -129,22 +175,65 @@ async def add_competitor(req: CompetitorRequest):
     except URLValidationError as exc:
         raise HTTPException(status_code=400, detail=f"Unsafe URL: {exc}") from exc
 
-    success = await scheduler.add_competitor(req.name, req.url)
+    success = await scheduler.add_competitor(req.name, req.url, user_id=user.id)
     if not success:
         raise HTTPException(status_code=400, detail=f"Competitor '{req.name}' already exists")
     return {"status": "added", "name": req.name, "url": req.url}
 
 
 @app.get("/api/competitors")
-async def list_competitors():
-    """List all registered competitors."""
-    competitors = await scheduler.list_competitors()
-    return {"competitors": competitors}
+async def list_competitors(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """List all registered competitors owned by the caller (plus legacy rows if allowed)."""
+    from app.config import settings
+
+    stmt = select(CompetitorRegistry)
+    if settings.ALLOW_LEGACY_GLOBAL_READS:
+        stmt = stmt.where((CompetitorRegistry.user_id.is_(None)) | (CompetitorRegistry.user_id == user.id))
+    else:
+        stmt = stmt.where(CompetitorRegistry.user_id == user.id)
+
+    res = await db.execute(stmt)
+    competitors = res.scalars().all()
+    owned = [
+        {"source_id": c.source_id, "url": c.url, "user_id": str(c.user_id) if c.user_id else None}
+        for c in competitors
+    ]
+    return {"competitors": owned}
 
 
 @app.delete("/api/competitors/{name}")
-async def remove_competitor(name: str):
-    """Remove a competitor from auto-crawling."""
+async def remove_competitor(
+    name: str,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_csrf),
+):
+    """Remove a competitor from auto-crawling.
+
+    Only the owning user (or a legacy/global row) may delete, so one user
+    cannot remove another user's monitored competitor by guessing its name.
+    """
+    from sqlalchemy import func
+
+    res = await db.execute(
+        select(CompetitorRegistry).where(
+            func.lower(CompetitorRegistry.source_id) == name.strip().lower()
+        )
+    )
+    competitor = res.scalar_one_or_none()
+    if competitor is None:
+        raise HTTPException(status_code=404, detail="Competitor not found")
+    # Check deletion authorization: user must own the record.
+    # Legacy rows (user_id IS NULL) can only be deleted if ALLOW_LEGACY_GLOBAL_READS is True.
+    from app.config import settings
+    if competitor.user_id is None:
+        if not settings.ALLOW_LEGACY_GLOBAL_READS:
+            raise HTTPException(status_code=404, detail="Competitor not found")
+    elif competitor.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Competitor not found")
     success = await scheduler.remove_competitor(name)
     if not success:
         raise HTTPException(status_code=404, detail="Competitor not found")
@@ -152,13 +241,17 @@ async def remove_competitor(name: str):
 
 
 @app.post("/api/crawl/trigger")
-async def trigger_crawl(source_id: Optional[str] = None):
+async def trigger_crawl(
+    source_id: Optional[str] = None,
+    user: User = Depends(require_user),
+    _: str = Depends(require_csrf),
+):
     """
     Trigger immediate crawl.
     If source_id provided, crawl only that competitor.
     Otherwise, crawl all registered competitors.
     """
-    results = await scheduler.crawl_now(source_id)
+    results = await scheduler.crawl_now(source_id, user_id=user.id)
     return {
         "crawled": len(results),
         "results": [
@@ -175,7 +268,12 @@ async def trigger_crawl(source_id: Optional[str] = None):
 
 
 @app.post("/api/crawl/single")
-async def crawl_single(req: CrawlSingleRequest, db: AsyncSession = Depends(get_db)):
+async def crawl_single(
+    req: CrawlSingleRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+    _: str = Depends(require_csrf),
+):
     """Crawl a single URL and persist the snapshot so it shows up in
     Insights/Changes immediately (previously this crawled but never saved)."""
     from app.models.schemas import WebhookPayload
@@ -200,7 +298,7 @@ async def crawl_single(req: CrawlSingleRequest, db: AsyncSession = Depends(get_d
                 "crawled_url": result.url,
             },
         )
-        await process_webhook(payload, db)
+        await process_webhook(payload, db, user_id=user.id)
 
     return {
         "source_id": result.source_id,
@@ -215,18 +313,27 @@ async def crawl_single(req: CrawlSingleRequest, db: AsyncSession = Depends(get_d
 
 
 @app.post("/api/ai/query", response_model=AskAIResponse)
-async def ask_ai(req: AskAIRequest, db: AsyncSession = Depends(get_db)):
+async def ask_ai(
+    req: AskAIRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+):
     """Grounded intelligence Q&A: query real events and snapshots."""
     from app.services.ask_ai import query_intelligence
-    result = await query_intelligence(req.question, db, source_id=req.source_id)
+    result = await query_intelligence(req.question, db, source_id=req.source_id, user_id=user.id)
     return result
 
 
 @app.get("/api/ai/query", response_model=AskAIResponse)
-async def ask_ai_get(question: str, source_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def ask_ai_get(
+    question: str,
+    source_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+):
     """GET variant for lightweight browser/curl queries."""
     from app.services.ask_ai import query_intelligence
-    result = await query_intelligence(question, db, source_id=source_id)
+    result = await query_intelligence(question, db, source_id=source_id, user_id=user.id)
     return result
 
 
@@ -247,7 +354,12 @@ import uuid
 
 
 @app.post("/api/discovery/analyze")
-async def analyze_and_discover(req: DiscoveryAnalyzeRequest, db: AsyncSession = Depends(get_db)):
+async def analyze_and_discover(
+    req: DiscoveryAnalyzeRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+    _: str = Depends(require_csrf),
+):
     """
     Profile a company website and execute competitor discovery.
     Produces structured company profile, discovers candidate competitors,
@@ -276,6 +388,7 @@ async def analyze_and_discover(req: DiscoveryAnalyzeRequest, db: AsyncSession = 
         company_name=profile["company_name"],
         status="completed",
         company_profile=profile,
+        user_id=user.id,
     )
     db.add(run)
 
@@ -310,6 +423,7 @@ async def analyze_and_discover(req: DiscoveryAnalyzeRequest, db: AsyncSession = 
             evidence=cand.get("evidence"),
             missing_evidence=cand.get("missing_evidence"),
             status="suggested",
+            user_id=user.id,
         )
         db.add(c_entity)
         candidate_entities.append(c_entity)
@@ -346,10 +460,17 @@ async def analyze_and_discover(req: DiscoveryAnalyzeRequest, db: AsyncSession = 
 
 
 @app.get("/api/discovery/runs")
-async def list_discovery_runs(limit: int = 10, db: AsyncSession = Depends(get_db)):
-    """List past discovery runs."""
+async def list_discovery_runs(
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """List past discovery runs owned by the caller (plus legacy rows)."""
     res = await db.execute(
-        select(DiscoveryRun).order_by(DiscoveryRun.created_at.desc()).limit(limit)
+        select(DiscoveryRun)
+        .where(_ownership_filter(DiscoveryRun, user.id))
+        .order_by(DiscoveryRun.created_at.desc())
+        .limit(limit)
     )
     runs = res.scalars().all()
     return [
@@ -367,14 +488,22 @@ async def list_discovery_runs(limit: int = 10, db: AsyncSession = Depends(get_db
 
 
 @app.get("/api/discovery/runs/{run_id}")
-async def get_discovery_run(run_id: str, db: AsyncSession = Depends(get_db)):
+async def get_discovery_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+):
     """Get details and candidates of a specific discovery run."""
     try:
         parsed_id = uuid.UUID(run_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid run ID format")
 
-    run_res = await db.execute(select(DiscoveryRun).where(DiscoveryRun.id == parsed_id))
+    run_res = await db.execute(
+        select(DiscoveryRun)
+        .where(DiscoveryRun.id == parsed_id)
+        .where(_ownership_filter(DiscoveryRun, user.id))
+    )
     run = run_res.scalar_one_or_none()
     if not run:
         raise HTTPException(status_code=404, detail="Discovery run not found")
@@ -382,6 +511,7 @@ async def get_discovery_run(run_id: str, db: AsyncSession = Depends(get_db)):
     cand_res = await db.execute(
         select(DiscoveryCandidate)
         .where(DiscoveryCandidate.run_id == parsed_id)
+        .where(_ownership_filter(DiscoveryCandidate, user.id))
         .order_by(DiscoveryCandidate.match_score.desc())
     )
     candidates = cand_res.scalars().all()
@@ -416,12 +546,21 @@ async def get_discovery_run(run_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/api/discovery/track")
-async def track_candidate(req: TrackCandidateRequest, db: AsyncSession = Depends(get_db)):
+async def track_candidate(
+    req: TrackCandidateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+    _: str = Depends(require_csrf),
+):
     """
     Track a discovered competitor candidate into the monitoring pipeline.
     Reuses existing competitor registry and crawler scheduling.
     """
-    cand_res = await db.execute(select(DiscoveryCandidate).where(DiscoveryCandidate.id == req.candidate_id))
+    cand_res = await db.execute(
+        select(DiscoveryCandidate)
+        .where(DiscoveryCandidate.id == req.candidate_id)
+        .where(_ownership_filter(DiscoveryCandidate, user.id))
+    )
     candidate = cand_res.scalar_one_or_none()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -436,11 +575,12 @@ async def track_candidate(req: TrackCandidateRequest, db: AsyncSession = Depends
         raise HTTPException(status_code=400, detail=f"Unsafe candidate URL: {exc}")
 
     # Register into existing competitor monitoring scheduler
-    success = await scheduler.add_competitor(competitor_name, competitor_url)
+    success = await scheduler.add_competitor(competitor_name, competitor_url, user_id=user.id)
     if not success:
         raise HTTPException(status_code=400, detail=f"Competitor '{competitor_name}' is already being monitored")
 
     candidate.status = "tracked"
+    candidate.user_id = user.id
     await db.commit()
 
     return {
@@ -452,19 +592,29 @@ async def track_candidate(req: TrackCandidateRequest, db: AsyncSession = Depends
 
 
 @app.post("/api/discovery/dismiss/{candidate_id}")
-async def dismiss_candidate(candidate_id: str, db: AsyncSession = Depends(get_db)):
+async def dismiss_candidate(
+    candidate_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_user),
+    _: str = Depends(require_csrf),
+):
     """Dismiss a discovered competitor candidate."""
     try:
         parsed_id = uuid.UUID(candidate_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid candidate ID format")
 
-    cand_res = await db.execute(select(DiscoveryCandidate).where(DiscoveryCandidate.id == parsed_id))
+    cand_res = await db.execute(
+        select(DiscoveryCandidate)
+        .where(DiscoveryCandidate.id == parsed_id)
+        .where(_ownership_filter(DiscoveryCandidate, user.id))
+    )
     candidate = cand_res.scalar_one_or_none()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     candidate.status = "dismissed"
+    candidate.user_id = user.id
     await db.commit()
 
     return {"status": "dismissed", "candidate_id": str(candidate.id)}

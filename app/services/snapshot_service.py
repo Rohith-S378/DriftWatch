@@ -1,7 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
-from typing import Any
+from typing import Any, Optional
 from datetime import datetime, timedelta
+import uuid
 
 from app.models.models import DataSnapshot, ChangeEvent, PriceHistory
 from app.models.schemas import WebhookPayload, ChangeEventOut, ProcessResult
@@ -67,7 +68,7 @@ async def _is_flap(change: ChangeResult, db: AsyncSession, source_id: str, windo
             # else continue looking for an earlier match
     return False
 
-async def process_webhook(payload: WebhookPayload, db: AsyncSession) -> ProcessResult:
+async def process_webhook(payload: WebhookPayload, db: AsyncSession, user_id: Optional[uuid.UUID] = None) -> ProcessResult:
     """
     Main orchestrator:
       1. Save new snapshot
@@ -75,12 +76,17 @@ async def process_webhook(payload: WebhookPayload, db: AsyncSession) -> ProcessR
       3. Run all detectors
       4. Persist change events
       5. Return structured result
+
+    `user_id` stamps ownership on every row created by this call. It is
+    optional (defaults to None) so the background scheduler — which has no
+    authenticated user context — keeps working with legacy/global rows.
     """
     # 1. Save snapshot
     snapshot = DataSnapshot(
         source_id=payload.source_id,
         source_type=payload.source_type,
         payload=payload.data,
+        user_id=user_id,
     )
     db.add(snapshot)
     await db.flush()  # get the ID before commit
@@ -128,6 +134,7 @@ async def process_webhook(payload: WebhookPayload, db: AsyncSession) -> ProcessR
                 plan_name=plan_name,
                 price=price,
                 currency=currency,
+                user_id=user_id,
             )
             db.add(ph)
 
@@ -163,6 +170,7 @@ async def process_webhook(payload: WebhookPayload, db: AsyncSession) -> ProcessR
             diff=_serialize_diff(change.diff),
             old_value=change.old_value,
             new_value=change.new_value,
+            user_id=user_id,
         )
         db.add(event)
         event_rows.append(event)
@@ -178,12 +186,28 @@ async def process_webhook(payload: WebhookPayload, db: AsyncSession) -> ProcessR
 
 
 async def get_recent_events(
-    source_id: str, limit: int, db: AsyncSession
+    source_id: str, limit: int, db: AsyncSession, user_id=None
 ) -> list[ChangeEventOut]:
-    result = await db.execute(
+    """
+    Fetch recent change events for a given source, scoped to the caller's
+    ownership (own rows + legacy/global rows with user_id IS NULL).
+
+    When user_id is None (legacy/internal callers), the old behaviour is
+    preserved: all rows for the source are returned.
+    """
+    stmt = (
         select(ChangeEvent)
         .where(ChangeEvent.source_id == source_id)
-        .order_by(desc(ChangeEvent.created_at))
-        .limit(limit)
+    )
+    if user_id is not None:
+        from app.config import settings
+        if settings.ALLOW_LEGACY_GLOBAL_READS:
+            stmt = stmt.where(
+                (ChangeEvent.user_id.is_(None)) | (ChangeEvent.user_id == user_id)
+            )
+        else:
+            stmt = stmt.where(ChangeEvent.user_id == user_id)
+    result = await db.execute(
+        stmt.order_by(desc(ChangeEvent.created_at)).limit(limit)
     )
     return [ChangeEventOut.model_validate(r) for r in result.scalars().all()]
