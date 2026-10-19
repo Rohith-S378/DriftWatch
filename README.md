@@ -167,7 +167,7 @@ flowchart TD
 ### 1. Clone & Environment Setup
 
 ```bash
-git clone https://github.com/Rohith-S378/DriftWatch.git
+git clone <repository-url>
 cd DriftWatch
 
 # Create Python virtual environment
@@ -202,6 +202,20 @@ DISCOVERY_MAX_CANDIDATES=10
 
 # Set to True ONLY for running local tests against 127.0.0.1:
 ALLOW_LOCAL_CRAWLS=False
+
+# ── Authentication ───────────────────────────────────────────────────────────
+# Google OAuth 2.0 (Optional — leave blank to disable Google Sign-In)
+# Obtain from Google Cloud Console > APIs & Services > Credentials
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
+# Set to True to allow reading pre-authentication (legacy/global) data
+# alongside the current user's own data. Defaults to False.
+ALLOW_LEGACY_GLOBAL_READS=False
+
+# Email/Password Authentication
+# No additional configuration required — accounts are created via
+# the /api/auth/register endpoint. Passwords are hashed with bcrypt.
 ```
 
 ### 3. Database Migrations
@@ -227,7 +241,7 @@ cd ..
 ### Start Backend
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --port 8000
 ```
 Interactive API documentation: `http://localhost:8000/docs`
 
@@ -238,6 +252,15 @@ cd frontend
 npm run dev
 ```
 Dashboard available at: `http://localhost:5173`
+
+### Start Node Notification Service (Optional)
+
+```bash
+cd JavaScript
+npm install
+npm run dev
+```
+Service runs on `http://localhost:3000` for email/Slack webhook notifications.
 
 ---
 
@@ -317,6 +340,26 @@ Verifies the complete React application in headless Chromium:
 - Automated Discovery workflow (/discovery): website input, profile generation, candidate recommendations list
 - 1-Click Track integration: promotes discovered candidate to active monitoring
 - Console error inspection (0 unexpected errors)
+
+---
+
+## 🔐 Authentication
+
+DriftWatch supports two authentication methods, both using server-side sessions stored in HttpOnly cookies:
+
+### Email / Password
+- Register via `/api/auth/register` (POST with email, password, optional display_name)
+- Passwords are hashed with bcrypt; never stored in plaintext
+- Login via `/api/auth/login`
+- Session expires after 24 hours; logout revokes the session server-side
+
+### Google OAuth 2.0
+- Obtain credentials from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `.env`
+- The OAuth callback URI is `http://localhost:8000/api/auth/google/callback`
+- Users sign in via the "Continue with Google" button on the Login/Register pages
+
+**⚠️ Credentials must never be committed.** The `.env` file is excluded via `.gitignore`. Use `.env.example` as a template and copy it to `.env` with your actual values.
 
 ---
 
