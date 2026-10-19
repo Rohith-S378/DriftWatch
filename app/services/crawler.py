@@ -1,16 +1,19 @@
 """
 Active web crawler for competitor intelligence.
 Fetches competitor websites, extracts pricing, messaging, and features.
+Supports both static HTTP fetch and optional Playwright browser rendering for JS-heavy sites.
 """
 import asyncio
 import aiohttp
 from bs4 import BeautifulSoup
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
+import logging
 
 from app.services.url_validator import validate_crawl_url, URLValidationError
 
+logger = logging.getLogger(__name__)
 
 # Maximum number of attempts per crawl (initial + retries).
 MAX_ATTEMPTS = 3
@@ -18,6 +21,10 @@ MAX_ATTEMPTS = 3
 RETRY_BASE_DELAY = 1.0
 # HTTP status codes that are worth retrying (transient).
 _RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
+
+# Browser rendering settings
+BROWSER_NAVIGATION_TIMEOUT = 15000  # 15 seconds
+BROWSER_CONTENT_TIMEOUT = 30000  # 30 seconds total
 
 
 @dataclass
@@ -32,6 +39,7 @@ class CrawlResult:
     success: bool
     error: Optional[str] = None
     attempts: int = 0
+    browser_rendered: bool = field(default=False, init=False)
 
 
 class CompetitorCrawler:
@@ -62,9 +70,17 @@ class CompetitorCrawler:
                     price_selector: Optional[str] = None,
                     feature_selector: Optional[str] = None,
                     keyword_extraction: bool = True,
-                    allow_local: bool = False) -> CrawlResult:
+                    allow_local: bool = False,
+                    allow_browser: bool = True) -> CrawlResult:
         """
         Crawl a competitor website and extract intelligence.
+
+        Strategy:
+            1. Fast path: fetch raw HTML via aiohttp and extract.
+            2. If the static extraction is empty (no headline AND no pricing AND
+               no features) and allow_browser is True, retry using Playwright to
+               render JavaScript-injected content, then extract from the rendered
+               DOM.
 
         Args:
             source_id: Unique identifier for this competitor
@@ -75,6 +91,8 @@ class CompetitorCrawler:
             keyword_extraction: Whether to extract keywords from text (default True)
             allow_local: When True, permit loopback/private URLs for local
                 development and end-to-end testing (never enable in production).
+            allow_browser: When True, fall back to Playwright rendering if static
+                extraction finds no meaningful content.
 
         Returns:
             CrawlResult with extracted data
@@ -105,6 +123,41 @@ class CompetitorCrawler:
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     }
                     async with session.get(safe_url, headers=headers) as resp:
+                        # SSRF Redirect Check: Ensure that every redirect hop landed on a safe public URL.
+                        for redirect_resp in getattr(resp, "history", ()):
+                            try:
+                                validate_crawl_url(str(redirect_resp.url), allow_local=allow_local)
+                            except URLValidationError as exc:
+                                return CrawlResult(
+                                    source_id=source_id,
+                                    url=safe_url,
+                                    headline="",
+                                    pricing=[],
+                                    features=[],
+                                    keywords=[],
+                                    raw_html="",
+                                    success=False,
+                                    error=f"Unsafe redirect blocked: {exc}",
+                                    attempts=attempt,
+                                )
+                        # Also validate the final URL landed upon
+                        if hasattr(resp, "url"):
+                            try:
+                                validate_crawl_url(str(resp.url), allow_local=allow_local)
+                            except URLValidationError as exc:
+                                return CrawlResult(
+                                    source_id=source_id,
+                                    url=safe_url,
+                                    headline="",
+                                    pricing=[],
+                                    features=[],
+                                    keywords=[],
+                                    raw_html="",
+                                    success=False,
+                                    error=f"Unsafe redirect blocked: {exc}",
+                                    attempts=attempt,
+                                )
+
                         # Retry on transient server-side statuses.
                         if resp.status in _RETRYABLE_STATUS and attempt < MAX_ATTEMPTS:
                             last_error = f"HTTP {resp.status} (retrying)"
@@ -133,6 +186,19 @@ class CompetitorCrawler:
                         pricing = self._extract_pricing(soup, price_selector)
                         features = self._extract_features(soup, feature_selector)
                         keywords = self._extract_keywords(soup, headline, keyword_extraction)
+
+                        # If static extraction is empty and browser is allowed,
+                        # fall back to Playwright rendering for JS-heavy sites.
+                        is_empty = not headline and not pricing and not features
+                        if is_empty and allow_browser:
+                            browser_result = await self._render_with_browser(
+                                source_id, safe_url, allow_local,
+                                headline_selector, price_selector,
+                                feature_selector, keyword_extraction,
+                            )
+                            if browser_result is not None:
+                                browser_result.browser_rendered = True
+                                return browser_result
 
                         return CrawlResult(
                             source_id=source_id,
@@ -318,6 +384,157 @@ class CompetitorCrawler:
                 found.add(keyword)
         
         return sorted(list(found))
+
+    # ----------------------------------------------------------------- #
+    #  Playwright browser fallback                                       #
+    # ----------------------------------------------------------------- #
+    async def _render_with_browser(
+        self,
+        source_id: str,
+        url: str,
+        allow_local: bool,
+        headline_selector: Optional[str] = None,
+        price_selector: Optional[str] = None,
+        feature_selector: Optional[str] = None,
+        keyword_extraction: bool = True,
+    ) -> Optional[CrawlResult]:
+        """
+        Render a JS-heavy page using Playwright and extract content from the
+        live DOM. Returns None if the browser cannot be launched or the page
+        fails to load, so the caller can decide how to handle it.
+
+        All SSRF safety checks are re-applied: the URL is validated again and
+        every redirect is vetted against the public-IP allowlist.
+        """
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            logger.warning("Playwright not installed; browser fallback unavailable")
+            return None
+
+        # Re-validate the URL (SSRF safety) before launching the browser.
+        try:
+            safe_url = validate_crawl_url(url, allow_local=allow_local)
+        except URLValidationError as exc:
+            return CrawlResult(
+                source_id=source_id,
+                url=url,
+                headline="",
+                pricing=[],
+                features=[],
+                keywords=[],
+                raw_html="",
+                success=False,
+                error=f"Browser URL rejected: {exc}",
+                attempts=0,
+            )
+
+        browser = None
+        context = None
+        page = None
+        try:
+            async with async_playwright() as p:
+                # Launch a fresh browser instance.
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context()
+                page = await context.new_page()
+
+                # SSRF guard on all browser-initiated subrequests and redirects
+                if not allow_local:
+                    async def _route_ssrf_filter(route, request):
+                        req_url = request.url
+                        # Data URIs and blob URIs are safe internal browser objects
+                        if req_url.startswith(("data:", "blob:", "about:")):
+                            await route.continue_()
+                            return
+                        try:
+                            validate_crawl_url(req_url, allow_local=False)
+                            await route.continue_()
+                        except URLValidationError:
+                            logger.warning(f"Browser SSRF block: intercepted unsafe request to {req_url}")
+                            await route.abort()
+
+                    await page.route("**/*", _route_ssrf_filter)
+
+                # Navigate with a bounded timeout.
+                await page.goto(
+                    safe_url,
+                    wait_until="domcontentloaded",
+                    timeout=BROWSER_NAVIGATION_TIMEOUT,
+                )
+
+                # Wait a short grace period for JS to populate the DOM.
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=2000)
+                except Exception:
+                    # networkidle can time out on long-polling sites; that's OK.
+                    pass
+                # A small additional sleep to allow short setTimeout callbacks to execute.
+                await asyncio.sleep(0.3)
+
+                # Grab the rendered HTML.
+                html = await page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+
+                headline = self._extract_headline(soup, headline_selector)
+                pricing = self._extract_pricing(soup, price_selector)
+                features = self._extract_features(soup, feature_selector)
+                keywords = self._extract_keywords(soup, headline, keyword_extraction)
+
+                return CrawlResult(
+                    source_id=source_id,
+                    url=safe_url,
+                    headline=headline,
+                    pricing=pricing,
+                    features=features,
+                    keywords=keywords,
+                    raw_html=html[:10000],
+                    success=True,
+                    attempts=1,
+                )
+        except asyncio.TimeoutError:
+            return CrawlResult(
+                source_id=source_id,
+                url=safe_url,
+                headline="",
+                pricing=[],
+                features=[],
+                keywords=[],
+                raw_html="",
+                success=False,
+                error="Browser navigation timed out",
+                attempts=1,
+            )
+        except Exception as exc:
+            return CrawlResult(
+                source_id=source_id,
+                url=safe_url,
+                headline="",
+                pricing=[],
+                features=[],
+                keywords=[],
+                raw_html="",
+                success=False,
+                error=f"Browser rendering failed: {exc}",
+                attempts=1,
+            )
+        finally:
+            # Ensure resources are released on all paths.
+            try:
+                if page is not None:
+                    await page.close()
+            except Exception:
+                pass
+            try:
+                if context is not None:
+                    await context.close()
+            except Exception:
+                pass
+            try:
+                if browser is not None:
+                    await browser.close()
+            except Exception:
+                pass
 
 
 # Global crawler instance
