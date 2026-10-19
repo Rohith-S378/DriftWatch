@@ -101,3 +101,28 @@ JavaScript/*.lnk
 JavaScript/*.backup
 JavaScript/test.txt
 frontend/dist/
+
+# =======================
+# Removed Unrelated Artifacts
+# =======================
+edgeiq/
+JavaScript/*.lnk
+JavaScript/*.backup
+JavaScript/*.bak
+JavaScript/*.back2
+JavaScript/hack
+JavaScript/hack.py
+JavaScript/hack analyser.py
+JavaScript/API.py
+JavaScript/p4_api.py
+JavaScript/analyser.py
+JavaScript/insight_gen.py
+JavaScript/rag.py
+JavaScript/hello.js
+JavaScript/test.txt
+JavaScript/test-notification.js
+JavaScript/test-slack.js
+JavaScript/dead-letter-queue.json
+JavaScript/sample_p2_data.json
+frontend/src/pages/*.bak
+frontend/src/pages/*.back2
